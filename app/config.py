@@ -39,3 +39,12 @@ MIN_RISK_REWARD = float(os.getenv("MIN_RISK_REWARD", "3.0"))
 STRATEGY_PAIRS = [p.strip().upper() for p in os.getenv("STRATEGY_PAIRS", "GBPUSD,EURUSD").split(",") if p.strip()]
 STRATEGY_TIMEFRAME = os.getenv("STRATEGY_TIMEFRAME", "1day")
 SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "3600"))  # hourly; daily signals change slowly
+
+# ── Intraday engine: SEPARATE, UNVALIDATED 15m liquidity-sweep day-trading engine ──
+# This is NOT the cost/OOS-validated daily edge above. It is a distinct sweep ->
+# displacement -> market-structure-shift -> FVG/OTE reversal engine, killzone-gated,
+# built to be backtested before it is trusted. Majors with the tightest intraday
+# spreads + cleanest liquidity raids. Override via env.
+INTRADAY_PAIRS = [p.strip().upper() for p in os.getenv("INTRADAY_PAIRS", "EURUSD,GBPUSD,USDJPY").split(",") if p.strip()]
+INTRADAY_TIMEFRAME = os.getenv("INTRADAY_TIMEFRAME", "15min")
+INTRADAY_MIN_RR = float(os.getenv("INTRADAY_MIN_RR", "2.0"))  # liquidity-to-liquidity day trades

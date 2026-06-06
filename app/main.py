@@ -149,20 +149,26 @@ from app.routes.cache import (
     router as cache_router
 )
 from app.services.signal_scheduler import start_signal_scheduler, stop_signal_scheduler
+from app.services.intraday_alert_scheduler import (
+    start_intraday_alert_scheduler, stop_intraday_alert_scheduler,
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Auto-start the signal scheduler when the server boots.
-    It runs in a background daemon thread — Telegram alerts fire automatically
-    every 15 minutes regardless of whether the frontend is open.
+    Auto-start the schedulers when the server boots, in background daemon threads:
+      - SignalScheduler: the validated DAILY edge (every 15 min).
+      - IntradayAlertScheduler: A+/A top-down liquidity sweeps, but only during the
+        London/NY killzones (idle otherwise). Both alert to Telegram automatically.
     """
-    print("[main] 🚀 Server starting — launching signal scheduler...")
+    print("[main] 🚀 Server starting — launching signal + intraday schedulers...")
     start_signal_scheduler()
+    start_intraday_alert_scheduler()
     yield
-    print("[main] 🛑 Server shutting down — stopping scheduler...")
+    print("[main] 🛑 Server shutting down — stopping schedulers...")
     stop_signal_scheduler()
+    stop_intraday_alert_scheduler()
 
 
 app = FastAPI(lifespan=lifespan)

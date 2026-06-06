@@ -1,10 +1,16 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Signal, executeSignalTrade } from '../services/api'
+import { Signal, executeSignalTrade, validateIntradaySignal, IntradayVerdict } from '../services/api'
 
 interface Props {
   signals: Signal[]
   onExecute?: () => void
+}
+
+function gradeColor(g?: string): string {
+  if (g === 'A+') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+  if (g === 'A') return 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+  return 'bg-zinc-700/40 text-zinc-300 border border-zinc-600/40'
 }
 
 function biasLabel(bias: Signal['bias']): string {
@@ -23,6 +29,26 @@ export default function SignalsTable({ signals, onExecute }: Props) {
   const [sortBy, setSortBy] = useState<'probability' | 'pair'>('probability')
   const [executing, setExecuting] = useState<string | null>(null)
   const [selected, setSelected] = useState<Signal | null>(null)
+  const [verdict, setVerdict] = useState<IntradayVerdict | null>(null)
+  const [validating, setValidating] = useState(false)
+
+  const openDetail = (signal: Signal) => {
+    setSelected(signal)
+    setVerdict(null)
+  }
+
+  const handleValidate = async () => {
+    if (!selected) return
+    setValidating(true)
+    setVerdict(null)
+    try {
+      setVerdict(await validateIntradaySignal(selected))
+    } catch {
+      setVerdict({ verdict: 'ERROR', confidence: 0, reason: 'Validation request failed — is the backend running?' })
+    } finally {
+      setValidating(false)
+    }
+  }
 
   const filtered = signals
     .filter((s) => {
@@ -133,10 +159,24 @@ export default function SignalsTable({ signals, onExecute }: Props) {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        onClick={() => setSelected(signal)}
+                        onClick={() => openDetail(signal)}
                         className="border-b border-zinc-800/30 hover:bg-zinc-800/20 transition-colors cursor-pointer"
                       >
-                        <td className="table-cell font-semibold text-white">{signal.pair.toUpperCase()}</td>
+                        <td className="table-cell font-semibold text-white">
+                          <div className="flex items-center gap-1.5">
+                            <span>{signal.pair.toUpperCase()}</span>
+                            {signal.grade && (
+                              <span className={`text-[10px] font-bold font-mono px-1 py-0.5 rounded ${gradeColor(signal.grade)}`}>
+                                {signal.grade}
+                              </span>
+                            )}
+                            {signal.fresh === false && (
+                              <span className="text-[10px] text-amber-500/80 font-mono" title={`stale (${signal.candle_age_min}m old)`}>
+                                stale
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="table-cell">
                           <span className={isBuy ? 'signal-buy' : 'signal-sell'}>
                             {signal.signal.toUpperCase()}
@@ -230,6 +270,14 @@ export default function SignalsTable({ signals, onExecute }: Props) {
                 ['Model', selected.model || 'Smart Money AI', 'text-purple-400'],
                 ['Bias', biasLabel(selected.bias), 'text-zinc-300'],
                 ['Updated', selected.updated_at ? new Date(selected.updated_at).toLocaleTimeString() : '—', 'text-zinc-500'],
+                ...(selected.entry_basis ? [['Entry Basis', selected.entry_basis, 'text-purple-300'] as [string, string, string]] : []),
+                ...(selected.swept_liquidity ? [['Swept Liq', Number(selected.swept_liquidity).toFixed(5), 'text-zinc-300'] as [string, string, string]] : []),
+                ...(selected.mss_level ? [['MSS Level', Number(selected.mss_level).toFixed(5), 'text-zinc-300'] as [string, string, string]] : []),
+                ...(selected.htf_bias ? [['HTF Bias', String(selected.htf_bias).toUpperCase(), 'text-blue-300'] as [string, string, string]] : []),
+                ...(selected.target_basis ? [['Target', selected.target_basis, 'text-emerald-300'] as [string, string, string]] : []),
+                ...(selected.runner_target ? [['Runner Target', Number(selected.runner_target).toFixed(5), 'text-zinc-300'] as [string, string, string]] : []),
+                ...(selected.grade ? [['Grade', selected.grade, 'text-yellow-300'] as [string, string, string]] : []),
+                ...(selected.risk_pips ? [['Risk (pips)', String(selected.risk_pips), 'text-red-300'] as [string, string, string]] : []),
               ] as [string, string, string][]).map(([k, v, c]) => (
                 <div key={k}>
                   <p className="text-zinc-600 text-xs uppercase mb-0.5">{k}</p>
@@ -237,6 +285,50 @@ export default function SignalsTable({ signals, onExecute }: Props) {
                 </div>
               ))}
             </div>
+
+            {selected.setup && (
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2">
+                <p className="text-zinc-600 text-xs uppercase mb-1">Setup</p>
+                <p className="text-zinc-300 text-xs font-mono leading-relaxed">{selected.setup}</p>
+              </div>
+            )}
+
+            {selected.management && (
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2">
+                <p className="text-zinc-600 text-xs uppercase mb-1">Trade Management</p>
+                <p className="text-zinc-300 text-xs font-mono leading-relaxed">{selected.management}</p>
+              </div>
+            )}
+
+            {/* Crew validation — intraday signals only (carry an entry_basis) */}
+            {selected.entry_basis && (
+              <div className="space-y-2">
+                <button
+                  onClick={handleValidate}
+                  disabled={validating}
+                  className="w-full py-2 rounded-lg font-mono font-semibold text-sm bg-purple-500/15 text-purple-300 border border-purple-500/30 hover:bg-purple-500/25 transition-all disabled:opacity-50"
+                >
+                  {validating ? 'Consulting desk crew…' : '🧠 AI Validate (Crew)'}
+                </button>
+                {verdict && (
+                  <div className={`rounded-lg border px-3 py-2 ${
+                    verdict.verdict === 'TAKE'
+                      ? 'border-emerald-500/40 bg-emerald-500/5'
+                      : verdict.verdict === 'SKIP'
+                      ? 'border-red-500/40 bg-red-500/5'
+                      : 'border-zinc-700 bg-zinc-900/50'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`font-bold font-mono ${
+                        verdict.verdict === 'TAKE' ? 'text-emerald-400' : verdict.verdict === 'SKIP' ? 'text-red-400' : 'text-zinc-300'
+                      }`}>{verdict.verdict}</span>
+                      <span className="text-xs text-zinc-500 font-mono">{verdict.confidence}% · {verdict.source || 'crew'}</span>
+                    </div>
+                    <p className="text-xs text-zinc-300 mt-1 leading-relaxed">{verdict.reason}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {selected.entry > 0 && (
               <button

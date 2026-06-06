@@ -61,6 +61,30 @@ export interface Signal {
   bias?: string | Record<string, unknown>
   killzone?: unknown
   updated_at?: string
+  // intraday (5m/15m liquidity-sweep) engine fields
+  quality_score?: number
+  entry_basis?: string
+  swept_liquidity?: number
+  mss_level?: number
+  entry_type?: string
+  current_price?: number
+  distance_to_entry_pips?: number
+  // top-down fields
+  htf_bias?: string
+  htf_daily?: string
+  htf_4h?: string
+  target_basis?: string
+  runner_target?: number
+  sweep_time?: string
+  // professional layer (grade / management / freshness)
+  grade?: string
+  risk_pips?: number
+  reward_pips?: number
+  tp1?: number
+  tp2?: number
+  management?: string
+  fresh?: boolean
+  candle_age_min?: number
 }
 
 export interface Trade {
@@ -118,6 +142,29 @@ export const fetchDashboard = () =>
 
 export const fetchSignals = () =>
   api.get<Signal[]>('/signals').then((r) => r.data)
+
+// Top-down liquidity-sweep engine on the chosen entry TF ('5min' | '15min').
+// Maps quality_score -> confluence_score so it reuses SignalsTable unchanged.
+export const fetchIntradaySignals = (tf: string = '15min') =>
+  api.get<Signal[]>(`/signals/intraday?tf=${encodeURIComponent(tf)}`).then((r) =>
+    (Array.isArray(r.data) ? r.data : []).map((s) => ({
+      ...s,
+      confluence_score: s.quality_score ?? s.confluence_score ?? 0,
+    })),
+  )
+
+export interface IntradayVerdict {
+  verdict: string
+  confidence: number
+  reason: string
+  source?: string
+  raw?: string
+  warning?: string
+}
+
+// On-demand CrewAI desk verdict (TAKE/SKIP) on a specific 15m signal.
+export const validateIntradaySignal = (signal: Signal) =>
+  api.post<IntradayVerdict>('/signals/intraday/validate', signal, { timeout: 90000 }).then((r) => r.data)
 
 export const fetchTradeHistory = (limit = 50) =>
   api.get<Trade[]>(`/trade-history?limit=${limit}`).then((r) => r.data)
