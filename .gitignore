@@ -1,0 +1,38 @@
+# ── Secrets / API keys ───────────────────────────────────
+.env
+app/.env
+*.env
+!.env.example          # keep the template
+
+# ── Python ───────────────────────────────────────────────
+venv/
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ── Node / frontend ──────────────────────────────────────
+node_modules/
+frontend/dist/
+dist/
+
+# ── Database ─────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Logs / runtime ───────────────────────────────────────
+logs/
+**/logs/
+*.log
+
+# ── Editor / OS ──────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+
+# ── Misc / local junk ────────────────────────────────────
+get-pip.py
+.agents/

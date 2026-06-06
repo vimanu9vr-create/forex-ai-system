@@ -1,0 +1,7 @@
+{
+  "oanda_api_key": "x",
+  "telegram_bot_token": "y",
+  "telegram_chat_id": "z",
+  "risk_percentage": 0.5,
+  "max_daily_loss": 4
+}

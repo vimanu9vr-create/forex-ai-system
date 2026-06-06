@@ -1,0 +1,51 @@
+# ForexAI paper-trading stack:
+#   app     = FastAPI + SignalScheduler  → scans GBPUSD/EURUSD daily, alerts + records paper trades
+#   monitor = closes paper trades when price hits TP/SL
+# Both share one SQLite DB on a named volume. Secrets come from app/.env via env_file.
+#
+#   docker compose up -d --build      # start
+#   docker compose logs -f            # watch
+#   docker compose down               # stop
+
+services:
+  app:
+    build: .
+    image: forex-ai:latest
+    env_file: ./app/.env
+    environment:
+      DATABASE_URL: "sqlite:////data/forex_ai.db"
+    volumes:
+      - forexdata:/data
+    ports:
+      - "8000:8000"
+    command: sh -c "python init_db.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    restart: unless-stopped
+
+  monitor:
+    image: forex-ai:latest
+    build: .
+    env_file: ./app/.env
+    environment:
+      DATABASE_URL: "sqlite:////data/forex_ai.db"
+    volumes:
+      - forexdata:/data
+    command: sh -c "python init_db.py && python run_monitor.py"
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: "/api"
+        VITE_WS_URL: ""
+    image: forex-ai-dashboard:latest
+    ports:
+      - "8080:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  forexdata:

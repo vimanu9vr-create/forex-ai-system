@@ -1,0 +1,23 @@
+# Keep the build context small AND keep secrets out of the image.
+# app/.env is injected at runtime via docker-compose env_file, never baked in.
+.env
+app/.env
+*.env
+
+venv/
+node_modules/
+frontend/
+.git/
+.gitignore
+__pycache__/
+**/__pycache__/
+*.pyc
+*.db
+logs/
+**/logs/
+.vscode/
+.agents/
+*.md
+get-pip.py
+profitable_signal_generator.py
+tests/

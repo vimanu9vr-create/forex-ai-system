@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Forex AI Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #22c55e;
+      --danger: #ef4444;
+      --border: #374151;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background: radial-gradient(circle at top left, #1e293b 0%, var(--bg) 40%);
+      color: var(--text);
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    h1 { grid-column: 1 / -1; margin: 0; font-size: 28px; }
+    h2 { margin-top: 0; font-size: 18px; }
+    label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 12px; }
+    input, select, button, textarea {
+      width: 100%;
+      background: #0b1220;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+    button { cursor: pointer; background: #14532d; border-color: #166534; }
+    button:hover { background: #166534; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    pre {
+      white-space: pre-wrap;
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      min-height: 80px;
+      max-height: 260px;
+      overflow: auto;
+      margin: 10px 0 0;
+    }
+    .ok { color: var(--accent); }
+    .err { color: var(--danger); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #0b1220;
+      color: var(--muted);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Forex AI Dashboard</h1>
+
+    <section class="card">
+      <h2>Auth</h2>
+      <label>Username</label>
+      <input id="username" value="admin" />
+      <label>Password</label>
+      <input id="password" type="password" value="admin" />
+      <button onclick="login()">Login</button>
+      <pre id="authOut"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Signals</h2>
+      <button onclick="loadSignals()">Fetch /signals</button>
+      <button onclick="toggleSocket()" id="socketBtn">Connect /ws/signals</button>
+      <pre id="signalsOut"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Trade Execution</h2>
+      <div class="row">
+        <div>
+          <label>Pair</label>
+          <input id="pair" value="EUR/USD" />
+        </div>
+        <div>
+          <label>Signal</label>
+          <select id="signal"><option>BUY</option><option>SELL</option></select>
+        </div>
+      </div>
+      <div class="row">
+        <div><label>Entry</label><input id="entry" value="1.1000" /></div>
+        <div><label>Stop Loss</label><input id="stopLoss" value="1.0950" /></div>
+      </div>
+      <div class="row">
+        <div><label>Take Profit</label><input id="takeProfit" value="1.1100" /></div>
+        <div><label>Probability</label><input id="probability" value="70" /></div>
+      </div>
+      <label>Units</label>
+      <input id="units" value="1000" />
+      <button onclick="executeTrade()">POST /trades/execute</button>
+      <pre id="tradeOut"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Status & Metrics</h2>
+      <button onclick="loadOandaStatus()">GET /oanda/status</button>
+      <button onclick="loadPerformance()">GET /performance</button>
+      <button onclick="loadTradeHistory()">GET /trade-history</button>
+      <pre id="metricsOut"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Crew Agent Signals</h2>
+      <button onclick="loadCrewSignals()">GET /crew-analysis</button>
+      <table>
+        <thead>
+          <tr>
+            <th>Pair</th>
+            <th>Signal</th>
+            <th>Entry</th>
+            <th>Stop Loss</th>
+            <th>Take Profit</th>
+            <th>Probability</th>
+          </tr>
+        </thead>
+        <tbody id="crewTableBody">
+          <tr><td colspan="6">No crew signal loaded yet.</td></tr>
+        </tbody>
+      </table>
+      <label>AI Analysis</label>
+      <pre id="crewAnalysisOut">No AI analysis loaded yet.</pre>
+      <pre id="crewOut"></pre>
+    </section>
+  </div>
+
+  <script>
+    const pretty = (v) => JSON.stringify(v, null, 2);
+    let socket = null;
+
+    async function callApi(path, options = {}) {
+      const res = await fetch(path, {
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options,
+      });
+      let data;
+      try { data = await res.json(); } catch { data = { raw: await res.text() }; }
+      if (!res.ok) throw new Error(pretty(data));
+      return data;
+    }
+
+    function show(id, value, isError = false) {
+      const el = document.getElementById(id);
+      el.className = isError ? 'err' : 'ok';
+      el.textContent = typeof value === 'string' ? value : pretty(value);
+    }
+
+    async function login() {
+      try {
+        const data = await callApi('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        show('authOut', data);
+      } catch (e) {
+        show('authOut', e.message, true);
+      }
+    }
+
+    async function loadSignals() {
+      try { show('signalsOut', await callApi('/signals')); }
+      catch (e) { show('signalsOut', e.message, true); }
+    }
+
+    async function executeTrade() {
+      try {
+        const body = {
+          pair: document.getElementById('pair').value,
+          signal: document.getElementById('signal').value,
+          entry: Number(document.getElementById('entry').value),
+          stop_loss: Number(document.getElementById('stopLoss').value),
+          take_profit: Number(document.getElementById('takeProfit').value),
+          probability: Number(document.getElementById('probability').value),
+          units: Number(document.getElementById('units').value),
+        };
+        show('tradeOut', await callApi('/trades/execute', { method: 'POST', body: JSON.stringify(body) }));
+      } catch (e) {
+        show('tradeOut', e.message, true);
+      }
+    }
+
+    async function loadOandaStatus() {
+      try { show('metricsOut', await callApi('/oanda/status')); }
+      catch (e) { show('metricsOut', e.message, true); }
+    }
+
+    async function loadPerformance() {
+      try { show('metricsOut', await callApi('/performance')); }
+      catch (e) { show('metricsOut', e.message, true); }
+    }
+
+    async function loadTradeHistory() {
+      try { show('metricsOut', await callApi('/trade-history')); }
+      catch (e) { show('metricsOut', e.message, true); }
+    }
+
+    async function loadCrewSignals() {
+      try {
+        const data = await callApi('/crew-analysis');
+        const signal = data.signal || {};
+        const row = `
+          <tr>
+            <td>${signal.pair ?? 'N/A'}</td>
+            <td>${signal.signal ?? 'N/A'}</td>
+            <td>${signal.entry ?? 'N/A'}</td>
+            <td>${signal.stop_loss ?? 'N/A'}</td>
+            <td>${signal.take_profit ?? 'N/A'}</td>
+            <td>${signal.probability ?? 'N/A'}</td>
+          </tr>
+        `;
+        document.getElementById('crewTableBody').innerHTML = row;
+        show('crewAnalysisOut', data.analysis || data.raw_result || 'No analysis available.');
+        show('crewOut', {
+          source: data.source,
+          warning: data.warning,
+          raw_result: data.raw_result,
+        });
+      } catch (e) {
+        document.getElementById('crewTableBody').innerHTML =
+          '<tr><td colspan="6">Failed to load crew signal.</td></tr>';
+        show('crewAnalysisOut', 'Failed to load AI analysis.', true);
+        show('crewOut', e.message, true);
+      }
+    }
+
+    function toggleSocket() {
+      const btn = document.getElementById('socketBtn');
+      if (socket) {
+        socket.close();
+        socket = null;
+        btn.textContent = 'Connect /ws/signals';
+        return;
+      }
+
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      socket = new WebSocket(`${protocol}://${location.host}/ws/signals`);
+      btn.textContent = 'Disconnect /ws/signals';
+
+      socket.onmessage = (event) => {
+        try { show('signalsOut', JSON.parse(event.data)); }
+        catch { show('signalsOut', event.data); }
+      };
+
+      socket.onerror = () => show('signalsOut', 'WebSocket error', true);
+      socket.onclose = () => {
+        socket = null;
+        btn.textContent = 'Connect /ws/signals';
+      };
+    }
+  </script>
+</body>
+</html>
