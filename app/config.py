@@ -69,3 +69,9 @@ INTRADAY_EQUAL_POOLS_ONLY = os.getenv("INTRADAY_EQUAL_POOLS_ONLY", "false").lowe
 # validated default is LONDON ONLY. Set INTRADAY_KILLZONES="London Open,New York Open" to watch NY.
 _kz = [k.strip() for k in os.getenv("INTRADAY_KILLZONES", "London Open").split(",") if k.strip()]
 INTRADAY_KILLZONES = set(_kz) if _kz else None
+
+# Which sessions the intraday alert scheduler pushes to Telegram (and forward-test logs).
+# London is the validated edge; New York UNDERPERFORMED in the backtest (net loss) but is
+# enabled here so its live signals are delivered + tracked. "london" / "newyork" / both.
+INTRADAY_ALERT_SESSIONS = {s.strip().lower() for s in
+                           os.getenv("INTRADAY_ALERT_SESSIONS", "london,newyork").split(",") if s.strip()}

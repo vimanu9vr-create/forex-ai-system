@@ -169,8 +169,9 @@ export default function Signals() {
               ✓ London is the validated session — positive net-of-cost &amp; out-of-sample on a small sample (19 trades), not real-money cleared.
             </p>
           ) : (
-            <p className="text-xs text-red-300/90 font-mono">
-              ⚠ {session === 'both' ? 'The New York portion is' : 'New York is'} analysis-only — a net loser in the backtest. London is the validated session.
+            <p className="text-xs text-amber-300/90 font-mono">
+              ⚠ {session === 'both' ? 'New York signals are' : 'New York is'} experimental — underperformed in the backtest (net loss).
+              Now alerted &amp; tradeable, but use discretion / reduced size; let the live forward-test prove it first.
             </p>
           )}
         </div>
