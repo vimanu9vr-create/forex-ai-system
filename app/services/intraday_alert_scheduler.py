@@ -11,9 +11,10 @@ import time
 import threading
 from datetime import datetime
 
+from app.config import INTRADAY_KILLZONES
 from app.services.intraday_signal_service import get_intraday_signals
 from app.services.telegram_service import send_telegram_message
-from app.smart_money.killzones import is_entry_killzone
+from app.smart_money.killzones import in_killzone
 
 INTERVAL_SECONDS = 300            # 5 min while a killzone is open
 ENTRY_TFS = ("15min", "5min")
@@ -68,8 +69,11 @@ class IntradayAlertScheduler:
                 time.sleep(0.5)
 
     def _scan_and_alert(self):
-        if not is_entry_killzone():
+        kz = in_killzone()
+        if not kz.get("entry_allowed"):
             return  # outside London/NY — stay idle, no API calls
+        if INTRADAY_KILLZONES and kz.get("killzone") not in INTRADAY_KILLZONES:
+            return  # engine only trades the configured killzone(s) (London) — don't scan/spend in NY
         sent = 0
         for tf in self.tfs:
             try:

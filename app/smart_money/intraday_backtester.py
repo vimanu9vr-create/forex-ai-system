@@ -53,9 +53,10 @@ def _simulate_with_fill(candles, i, side, entry, sl, tp, pip, cost_pips):
     return {"result": "open", "R": 0.0, "exit": min(n - 1, fill_j + MAX_BARS)}
 
 
-def run_intraday_backtest(pair, bars=5000, cost_pips=0.0, require_killzone=True, filters=None):
+def run_intraday_backtest(pair, bars=5000, cost_pips=0.0, require_killzone=True, filters=None, candles=None):
     filters = filters or {}
-    candles = _fetch_history(pair, "15min", bars)
+    if candles is None:                       # allow a pre-fetched slice (OOS / multi-config reuse)
+        candles = _fetch_history(pair, "15min", bars)
     if not candles or len(candles) < WINDOW + 50:
         return {"pair": pair, "error": "insufficient data", "trades": 0, "candles": len(candles or [])}
 
@@ -110,6 +111,23 @@ def _summarize(pair, trades, n_candles, cost_pips):
         "max_drawdown_R": round(maxdd, 2),
         "by_killzone": kz,
         "candles": n_candles,
+    }
+
+
+def run_intraday_oos(pair, bars=5000, cost_pips=1.5, require_killzone=True, filters=None):
+    """First-half / second-half consistency check (NO refit): run the SAME fixed config on
+    the older half and the unseen newer half. A real edge holds in BOTH halves; a curve-fit
+    one is positive in one half and negative in the other. Net of cost by default."""
+    candles = _fetch_history(pair, "15min", bars)
+    if not candles or len(candles) < 2 * (WINDOW + 50):
+        return {"pair": pair, "error": "insufficient data for OOS", "candles": len(candles or [])}
+    mid = len(candles) // 2
+    return {
+        "pair": pair,
+        "first_half": run_intraday_backtest(pair, cost_pips=cost_pips, require_killzone=require_killzone,
+                                            filters=filters, candles=candles[:mid]),
+        "second_half": run_intraday_backtest(pair, cost_pips=cost_pips, require_killzone=require_killzone,
+                                             filters=filters, candles=candles[mid:]),
     }
 
 

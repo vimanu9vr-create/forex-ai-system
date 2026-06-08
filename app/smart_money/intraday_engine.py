@@ -10,20 +10,30 @@ trend engine). It encodes the ICT intraday model end to end:
   4. Displacement+MSS : a strong move the other way that breaks the last opposing
                         swing (market structure shift) — confirms the reversal
   5. Entry            : the FVG left by the displacement, else OTE (70.5% retrace)
-  6. SL / TP          : SL beyond the sweep extreme; TP at the nearest opposite
-                        liquidity pool that still satisfies min RR
+  6. SL / TP          : SL `sl_atr_mult`*ATR beyond the sweep extreme (wide enough to
+                        survive the double-tap); TP at the nearest opposite liquidity
+                        pool that still satisfies min RR
   7. Risk             : INTRADAY_MIN_RR enforced; otherwise the setup is rejected
 
 `analyze_intraday(pair, candles)` is pure — candles in, one signal dict or None
 out — so the backtester replays it bar-by-bar with no lookahead.
 
 Naming note: `quality_score` is an honest confluence CHECKLIST (0-100), NOT a
-measured win-probability. This engine is UNVALIDATED until backtested.
+measured win-probability.
+
+Validation (backtest_intraday_tune.py, net of 1.5-pip spread): the original wick-tight
+stop + 2R target LOST (-0.06R net). The desk corrections baked into config — wider stop
+(sl_atr_mult 1.0), nearer target (RR 1.5), and LONDON-ONLY (New York bled consistently) —
+flip it to +0.68R net, 68% win, positive in BOTH out-of-sample halves. SMALL SAMPLE
+(19 trades) → demo / forward-test candidate, NOT yet cleared for real capital.
 """
 
 from datetime import datetime
 
-from app.config import INTRADAY_MIN_RR
+from app.config import (
+    INTRADAY_MIN_RR, INTRADAY_SL_ATR_MULT, INTRADAY_MIN_SWEEP_ATR,
+    INTRADAY_MIN_DISP_BODY_ATR, INTRADAY_EQUAL_POOLS_ONLY, INTRADAY_KILLZONES,
+)
 from app.smart_money.structure import detect_swings
 from app.smart_money.liquidity import detect_equal_highs, detect_equal_lows
 from app.smart_money.sweeps import detect_buy_side_sweeps, detect_sell_side_sweeps
@@ -38,11 +48,13 @@ DISPLACEMENT_ATR = 1.2   # reversal leg must span >= 1.2x ATR to count as displa
 STRONG_BODY_ATR  = 0.6   # at least one candle body >= 0.6x ATR inside the displacement
 MIN_CANDLES      = 60
 
-# Quality filters — baseline OFF (0.0 / False); the backtester sweeps these and the
-# winning values are baked in here. See analyze_intraday() docstring.
-MIN_SWEEP_ATR     = 0.0   # sweep must penetrate the level by >= this * ATR (real raid)
-MIN_DISP_BODY_ATR = 0.0   # the MSS-breaking candle body must be >= this * ATR
-EQUAL_POOLS_ONLY  = False  # only sweep engineered equal-highs/lows (drop lone swings)
+# Desk-correction tunables — sourced from config (env-overridable) so the backtester
+# sweeps them and the WINNING values become the live defaults. See module docstring.
+SL_ATR_MULT       = INTRADAY_SL_ATR_MULT       # stop buffer beyond the sweep wick, in ATR (wider survives the double-tap)
+MIN_SWEEP_ATR     = INTRADAY_MIN_SWEEP_ATR     # sweep must penetrate the level by >= this * ATR (real raid)
+MIN_DISP_BODY_ATR = INTRADAY_MIN_DISP_BODY_ATR # the MSS-breaking candle body must be >= this * ATR
+EQUAL_POOLS_ONLY  = INTRADAY_EQUAL_POOLS_ONLY  # only sweep engineered equal-highs/lows (drop lone swings)
+ALLOWED_KILLZONES = INTRADAY_KILLZONES         # restrict entries to these killzone names, or None for London+NY
 
 
 def _pip(pair: str) -> float:
@@ -98,7 +110,8 @@ def htf_bias_from(daily, h4):
 
 def analyze_intraday(pair, candles, min_rr=None, require_killzone=True,
                      min_sweep_atr=MIN_SWEEP_ATR, min_disp_body_atr=MIN_DISP_BODY_ATR,
-                     equal_pools_only=EQUAL_POOLS_ONLY,
+                     equal_pools_only=EQUAL_POOLS_ONLY, sl_atr_mult=SL_ATR_MULT,
+                     allowed_killzones=ALLOWED_KILLZONES,
                      htf_bias=None, tf="15min", draw_targets=None):
     """Return one sweep-reversal signal dict, or None if no disciplined setup.
 
@@ -120,7 +133,7 @@ def analyze_intraday(pair, candles, min_rr=None, require_killzone=True,
 
     pip = _pip(pair)
     atr = _atr(candles)
-    sl_buffer = max(atr * 0.5, pip * 5)  # tight intraday buffer beyond the wick
+    sl_buffer = max(atr * sl_atr_mult, pip * 5)  # buffer beyond the sweep wick (wider survives the double-tap)
     ts_index = {c["datetime"]: i for i, c in enumerate(candles)}
 
     swings = detect_swings(candles, lookback=SWING_LOOKBACK)
@@ -147,10 +160,12 @@ def analyze_intraday(pair, candles, min_rr=None, require_killzone=True,
 
     longs = _long_setup(pair, candles, sell_sweeps, swing_highs, equal_highs,
                         ts_index, pip, atr, sl_buffer, min_rr, require_killzone,
-                        min_sweep_atr, min_disp_body_atr, tf, draw_targets, htf_bias) if allow_long else None
+                        min_sweep_atr, min_disp_body_atr, tf, draw_targets, htf_bias,
+                        allowed_killzones) if allow_long else None
     shorts = _short_setup(pair, candles, buy_sweeps, swing_lows, equal_lows,
                          ts_index, pip, atr, sl_buffer, min_rr, require_killzone,
-                         min_sweep_atr, min_disp_body_atr, tf, draw_targets, htf_bias) if allow_short else None
+                         min_sweep_atr, min_disp_body_atr, tf, draw_targets, htf_bias,
+                         allowed_killzones) if allow_short else None
 
     candidates = [s for s in (longs, shorts) if s]
     if not candidates:
@@ -163,7 +178,7 @@ def analyze_intraday(pair, candles, min_rr=None, require_killzone=True,
 def _long_setup(pair, candles, sweeps, swing_highs, equal_highs,
                 ts_index, pip, atr, sl_buffer, min_rr, require_killzone,
                 min_sweep_atr=0.0, min_disp_body_atr=0.0,
-                tf="15min", draw_targets=None, htf_bias=None):
+                tf="15min", draw_targets=None, htf_bias=None, allowed_killzones=None):
     n = len(candles)
     last_close = candles[-1]["close"]
 
@@ -183,6 +198,8 @@ def _long_setup(pair, candles, sweeps, swing_highs, equal_highs,
     kz = in_killzone(candles[sweep_idx]["datetime"])
     if require_killzone and not kz.get("entry_allowed"):
         return None
+    if allowed_killzones and kz.get("killzone") not in allowed_killzones:
+        return None  # session focus (e.g. London Open only)
 
     pre_highs = [h for h in swing_highs if h["index"] <= sweep_idx]
     if not pre_highs:
@@ -225,7 +242,7 @@ def _long_setup(pair, candles, sweeps, swing_highs, equal_highs,
 def _short_setup(pair, candles, sweeps, swing_lows, equal_lows,
                  ts_index, pip, atr, sl_buffer, min_rr, require_killzone,
                  min_sweep_atr=0.0, min_disp_body_atr=0.0,
-                 tf="15min", draw_targets=None, htf_bias=None):
+                 tf="15min", draw_targets=None, htf_bias=None, allowed_killzones=None):
     n = len(candles)
     last_close = candles[-1]["close"]
 
@@ -245,6 +262,8 @@ def _short_setup(pair, candles, sweeps, swing_lows, equal_lows,
     kz = in_killzone(candles[sweep_idx]["datetime"])
     if require_killzone and not kz.get("entry_allowed"):
         return None
+    if allowed_killzones and kz.get("killzone") not in allowed_killzones:
+        return None  # session focus (e.g. London Open only)
 
     pre_lows = [l for l in swing_lows if l["index"] <= sweep_idx]
     if not pre_lows:

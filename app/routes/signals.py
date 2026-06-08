@@ -13,10 +13,11 @@ def get_signals():
 
 
 @router.get("/signals/intraday")
-def get_intraday(tf: str = "15min"):
+def get_intraday(tf: str = "15min", session: str = "london"):
     """Top-down liquidity-sweep engine (separate from the daily-edge /signals).
-    tf = entry timeframe: '5min' or '15min'. Gated to the Daily/4H bias direction."""
-    return get_intraday_signals(tf=tf)
+    tf = entry timeframe: '5min' or '15min'. session = 'london' (validated default) |
+    'newyork' | 'both' — analyze each killzone separately. Gated to the Daily/4H bias."""
+    return get_intraday_signals(tf=tf, session=session)
 
 
 @router.get("/signals/intraday/status")

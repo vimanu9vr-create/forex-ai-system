@@ -12,6 +12,7 @@ Covers:
 """
 from datetime import datetime, timedelta
 
+from app.config import INTRADAY_MIN_RR
 from app.smart_money.killzones import in_killzone, is_entry_killzone
 from app.smart_money.intraday_engine import analyze_intraday
 
@@ -55,7 +56,7 @@ def test_buy_fires_in_killzone():
     assert sig is not None, "expected a BUY signal in the London killzone"
     assert sig["signal"] == "BUY"
     assert sig["stop_loss"] < sig["entry"] < sig["take_profit"]
-    assert sig["risk_reward"] >= 2.0
+    assert sig["risk_reward"] >= INTRADAY_MIN_RR   # configured floor (now 1.5 after the desk corrections)
     assert sig["entry_basis"] == "FVG"
     assert sig["killzone"] == "London Open"
     print(f"ok  BUY fires  entry={sig['entry']} sl={sig['stop_loss']} tp={sig['take_profit']} RR={sig['risk_reward']}")
@@ -65,8 +66,9 @@ def test_killzone_gate_blocks_off_session():
     # START so the sweep bar (idx 60) = Jan-2 11:00 UTC -> NOT a killzone
     candles = build(datetime(2024, 1, 1, 20, 0, 0))
     assert analyze_intraday("EURUSD", candles) is None, "off-session sweep must be gated out"
-    # ...but the SAME setup fires when the gate is disabled -> gate is the only blocker
-    assert analyze_intraday("EURUSD", candles, require_killzone=False) is not None
+    # ...but the SAME setup fires when both session gates are disabled -> gating is the only blocker
+    # (allowed_killzones now defaults to London-only, so pass None to isolate the entry-allowed gate)
+    assert analyze_intraday("EURUSD", candles, require_killzone=False, allowed_killzones=None) is not None
     print("ok  killzone gate blocks off-session sweep (and only the gate)")
 
 

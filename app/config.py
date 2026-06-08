@@ -45,6 +45,27 @@ SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "3600"))  # hourl
 # displacement -> market-structure-shift -> FVG/OTE reversal engine, killzone-gated,
 # built to be backtested before it is trusted. Majors with the tightest intraday
 # spreads + cleanest liquidity raids. Override via env.
-INTRADAY_PAIRS = [p.strip().upper() for p in os.getenv("INTRADAY_PAIRS", "EURUSD,GBPUSD,USDJPY").split(",") if p.strip()]
+# Full majors for analysis across both sessions. NOTE: only EURUSD/GBPUSD/USDJPY were
+# in the London backtest (+0.68R); AUD/CAD/CHF/NZD are observation-only until backtested.
+# More pairs = slower scan (each = Daily+4H+entryTF fetch). Trim via env if it lags.
+INTRADAY_PAIRS = [p.strip().upper() for p in os.getenv("INTRADAY_PAIRS", "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD").split(",") if p.strip()]
 INTRADAY_TIMEFRAME = os.getenv("INTRADAY_TIMEFRAME", "15min")
-INTRADAY_MIN_RR = float(os.getenv("INTRADAY_MIN_RR", "2.0"))  # liquidity-to-liquidity day trades
+INTRADAY_MIN_RR = float(os.getenv("INTRADAY_MIN_RR", "1.5"))  # nearer target converts more often (was 2.0; backtest: lifts net edge)
+
+# ── Intraday tuning knobs (the desk corrections; backtested in backtest_intraday_tune.py) ──
+# The original wick-tight stop + 2R target LOST net of cost (-0.06R: death by stop-out —
+# the raid double-taps and runs the stop before the reversal). The tuning harness tested
+# principled corrections net of 1.5-pip spread + out-of-sample; WINNERS are the defaults
+# below. Best config "london_only" (sl x1.0, RR 1.5, London-only): +0.68R net, 68% win,
+# positive in BOTH OOS halves on a SMALL sample (19 trades). All env-overridable.
+INTRADAY_SL_ATR_MULT = float(os.getenv("INTRADAY_SL_ATR_MULT", "1.0"))      # stop buffer beyond the sweep wick, in ATR (wider survives the double-tap; lifted win% 33->50)
+INTRADAY_MIN_SWEEP_ATR = float(os.getenv("INTRADAY_MIN_SWEEP_ATR", "0.0"))  # sweep must penetrate the pool by >= this*ATR (a real raid; ON dropped sample to 7 trades, left OFF)
+INTRADAY_MIN_DISP_BODY_ATR = float(os.getenv("INTRADAY_MIN_DISP_BODY_ATR", "0.0"))  # the MSS-breaking candle body must be >= this*ATR (true displacement)
+INTRADAY_EQUAL_POOLS_ONLY = os.getenv("INTRADAY_EQUAL_POOLS_ONLY", "false").lower() in ("1", "true", "yes")  # only raid engineered equal-highs/lows (similar edge, fewer trades — OFF)
+
+# Restrict entries to specific killzones (exact names: "London Open", "New York Open").
+# Comma-separated; empty/unset => both London & NY. BACKTEST: New York bleeds consistently
+# across pairs/configs (EURUSD New -4.79R, GBPUSD New -3.07R) while London pays — so the
+# validated default is LONDON ONLY. Set INTRADAY_KILLZONES="London Open,New York Open" to watch NY.
+_kz = [k.strip() for k in os.getenv("INTRADAY_KILLZONES", "London Open").split(",") if k.strip()]
+INTRADAY_KILLZONES = set(_kz) if _kz else None

@@ -11,6 +11,7 @@ type Mode = 'daily' | 'intraday'
 export default function Signals() {
   const [mode, setMode] = useState<Mode>('daily')
   const [entryTf, setEntryTf] = useState<'15min' | '5min'>('15min')
+  const [session, setSession] = useState<'london' | 'newyork' | 'both'>('london')
   const [signals, setSignals] = useState<Signal[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -18,7 +19,7 @@ export default function Signals() {
 
   const load = useCallback(async () => {
     try {
-      const data = mode === 'intraday' ? await fetchIntradaySignals(entryTf) : await fetchSignals()
+      const data = mode === 'intraday' ? await fetchIntradaySignals(entryTf, session) : await fetchSignals()
       setSignals(Array.isArray(data) ? data : [])
       setLastUpdate(new Date())
       setError('')
@@ -27,7 +28,7 @@ export default function Signals() {
     } finally {
       setLoading(false)
     }
-  }, [mode, entryTf])
+  }, [mode, entryTf, session])
 
   // Reload whenever the engine mode changes
   useEffect(() => {
@@ -55,6 +56,7 @@ export default function Signals() {
   const highProb = signals.filter((s) => (s.confluence_score ?? 0) >= 85).length
 
   const isIntraday = mode === 'intraday'
+  const sessionLabel = session === 'newyork' ? 'New York' : session === 'both' ? 'London + New York' : 'London'
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
@@ -101,26 +103,56 @@ export default function Signals() {
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 space-y-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <p className="text-sm text-amber-300 font-semibold">⚡ Top-Down Liquidity Sweeps — experimental</p>
-            <div className="flex gap-1 p-1 rounded bg-zinc-900 border border-zinc-800">
-              {(['15min', '5min'] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setEntryTf(t)}
-                  className={`px-2.5 py-1 rounded text-xs font-mono font-semibold transition-all ${
-                    entryTf === t ? 'bg-zinc-700 text-white border border-zinc-600' : 'text-zinc-500 hover:text-zinc-300'
-                  }`}
-                >
-                  {t === '15min' ? '15m' : '5m'}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Session toggle — analyze London & New York separately */}
+              <div className="flex gap-1 p-1 rounded bg-zinc-900 border border-zinc-800">
+                {([
+                  ['london', 'London'],
+                  ['newyork', 'New York'],
+                  ['both', 'Both'],
+                ] as ['london' | 'newyork' | 'both', string][]).map(([s, label]) => (
+                  <button
+                    key={s}
+                    onClick={() => setSession(s)}
+                    className={`px-2.5 py-1 rounded text-xs font-mono font-semibold transition-all ${
+                      session === s ? 'bg-zinc-700 text-white border border-zinc-600' : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {/* Entry timeframe toggle */}
+              <div className="flex gap-1 p-1 rounded bg-zinc-900 border border-zinc-800">
+                {(['15min', '5min'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setEntryTf(t)}
+                    className={`px-2.5 py-1 rounded text-xs font-mono font-semibold transition-all ${
+                      entryTf === t ? 'bg-zinc-700 text-white border border-zinc-600' : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    {t === '15min' ? '15m' : '5m'}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <p className="text-xs text-zinc-400 font-mono leading-relaxed">
             Daily/4H bias gates direction — mixed HTF means the pair stands aside. Sweep → displacement → MSS →
-            FVG/OTE entry in the London/NY killzones; TP at the nearest opposing liquidity, runner to the HTF draw.
-            Entry TF: <span className="text-amber-300">{entryTf === '15min' ? '15-minute' : '5-minute'}</span> · discretionary /
-            paper — not yet backtest-validated.
+            FVG/OTE entry in the <span className="text-amber-300">{sessionLabel} killzone</span>; wider sweep-stop,
+            TP at the nearest opposing liquidity, runner to the HTF draw. Entry TF:{' '}
+            <span className="text-amber-300">{entryTf === '15min' ? '15-minute' : '5-minute'}</span> · paper / forward-test.
           </p>
+          {session === 'london' ? (
+            <p className="text-xs text-emerald-300/80 font-mono">
+              ✓ London is the validated session — positive net-of-cost &amp; out-of-sample on a small sample (19 trades), not real-money cleared.
+            </p>
+          ) : (
+            <p className="text-xs text-red-300/90 font-mono">
+              ⚠ {session === 'both' ? 'The New York portion is' : 'New York is'} analysis-only — a net loser in the backtest. London is the validated session.
+            </p>
+          )}
         </div>
       ) : (
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">

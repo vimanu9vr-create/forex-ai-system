@@ -143,15 +143,21 @@ export const fetchDashboard = () =>
 export const fetchSignals = () =>
   api.get<Signal[]>('/signals').then((r) => r.data)
 
-// Top-down liquidity-sweep engine on the chosen entry TF ('5min' | '15min').
-// Maps quality_score -> confluence_score so it reuses SignalsTable unchanged.
-export const fetchIntradaySignals = (tf: string = '15min') =>
-  api.get<Signal[]>(`/signals/intraday?tf=${encodeURIComponent(tf)}`).then((r) =>
-    (Array.isArray(r.data) ? r.data : []).map((s) => ({
-      ...s,
-      confluence_score: s.quality_score ?? s.confluence_score ?? 0,
-    })),
-  )
+// Top-down liquidity-sweep engine on the chosen entry TF ('5min' | '15min') and session
+// ('london' | 'newyork' | 'both'). Maps quality_score -> confluence_score so it reuses
+// SignalsTable unchanged. Longer timeout: a cold multi-pair scan can take ~50s.
+export const fetchIntradaySignals = (tf: string = '15min', session: string = 'london') =>
+  api
+    .get<Signal[]>(
+      `/signals/intraday?tf=${encodeURIComponent(tf)}&session=${encodeURIComponent(session)}`,
+      { timeout: 90000 },
+    )
+    .then((r) =>
+      (Array.isArray(r.data) ? r.data : []).map((s) => ({
+        ...s,
+        confluence_score: s.quality_score ?? s.confluence_score ?? 0,
+      })),
+    )
 
 export interface IntradayVerdict {
   verdict: string
