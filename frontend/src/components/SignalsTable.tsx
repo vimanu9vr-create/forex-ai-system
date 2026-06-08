@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Signal, executeSignalTrade, validateIntradaySignal, IntradayVerdict } from '../services/api'
+import { Signal, executeSignalTrade, validateIntradaySignal, IntradayVerdict, redetectIntradaySignal, RedetectResult } from '../services/api'
 
 interface Props {
   signals: Signal[]
@@ -31,10 +31,13 @@ export default function SignalsTable({ signals, onExecute }: Props) {
   const [selected, setSelected] = useState<Signal | null>(null)
   const [verdict, setVerdict] = useState<IntradayVerdict | null>(null)
   const [validating, setValidating] = useState(false)
+  const [redetect, setRedetect] = useState<RedetectResult | null>(null)
+  const [redetecting, setRedetecting] = useState(false)
 
   const openDetail = (signal: Signal) => {
     setSelected(signal)
     setVerdict(null)
+    setRedetect(null)
   }
 
   const handleValidate = async () => {
@@ -47,6 +50,22 @@ export default function SignalsTable({ signals, onExecute }: Props) {
       setVerdict({ verdict: 'ERROR', confidence: 0, reason: 'Validation request failed — is the backend running?' })
     } finally {
       setValidating(false)
+    }
+  }
+
+  const handleRedetect = async () => {
+    if (!selected) return
+    setRedetecting(true)
+    setRedetect(null)
+    try {
+      const tf = selected.timeframe || '15min'
+      const kz = String(selected.killzone || '')
+      const session = kz.includes('New York') ? 'newyork' : 'london'
+      setRedetect(await redetectIntradaySignal(selected.pair, tf, session))
+    } catch {
+      setRedetect({ verdict: 'ERROR', reason: 'Re-detection request failed — is the backend running?' })
+    } finally {
+      setRedetecting(false)
     }
   }
 
@@ -325,6 +344,43 @@ export default function SignalsTable({ signals, onExecute }: Props) {
                       <span className="text-xs text-zinc-500 font-mono">{verdict.confidence}% · {verdict.source || 'crew'}</span>
                     </div>
                     <p className="text-xs text-zinc-300 mt-1 leading-relaxed">{verdict.reason}</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleRedetect}
+                  disabled={redetecting}
+                  className="w-full py-2 rounded-lg font-mono font-semibold text-sm bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25 transition-all disabled:opacity-50"
+                >
+                  {redetecting ? 'Re-detecting independently…' : '🔎 2nd Opinion (independent re-detect)'}
+                </button>
+                {redetect && (
+                  <div className={`rounded-lg border px-3 py-2 ${
+                    redetect.verdict === 'CONFIRM'
+                      ? 'border-emerald-500/40 bg-emerald-500/5'
+                      : redetect.verdict === 'REJECT'
+                      ? 'border-red-500/40 bg-red-500/5'
+                      : 'border-zinc-700 bg-zinc-900/50'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`font-bold font-mono ${
+                        redetect.verdict === 'CONFIRM' ? 'text-emerald-400' : redetect.verdict === 'REJECT' ? 'text-red-400' : 'text-zinc-300'
+                      }`}>
+                        {redetect.verdict}{redetect.direction && redetect.direction !== 'NONE' ? ` ${redetect.direction}` : ''}
+                      </span>
+                      <span className="text-xs text-zinc-500 font-mono">{redetect.confidence ?? 0}% · {redetect.source || 'crew'}</span>
+                    </div>
+                    {redetect.agreement && (
+                      <p className={`text-xs font-mono mt-1 ${redetect.agreement.startsWith('AGREE') ? 'text-emerald-300' : 'text-amber-300'}`}>
+                        {redetect.agreement.startsWith('AGREE') ? '✓ ' : '⚠ '}{redetect.agreement}
+                      </p>
+                    )}
+                    {redetect.verdict === 'CONFIRM' && redetect.entry != null && (
+                      <p className="text-xs text-zinc-400 font-mono mt-1">
+                        its read — E {redetect.entry} · SL {redetect.stop_loss} · TP {redetect.take_profit}
+                      </p>
+                    )}
+                    {redetect.reason && <p className="text-xs text-zinc-300 mt-1 leading-relaxed">{redetect.reason}</p>}
                   </div>
                 )}
               </div>

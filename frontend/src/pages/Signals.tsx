@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { fetchSignals, fetchIntradaySignals, Signal } from '../services/api'
+import { fetchSignals, fetchIntradaySignals, fetchForwardTest, Signal, ForwardTestStats } from '../services/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import SignalsTable from '../components/SignalsTable'
 import RiskCalculator from '../components/RiskCalculator'
@@ -16,6 +16,7 @@ export default function Signals() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [fwd, setFwd] = useState<ForwardTestStats | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -38,6 +39,25 @@ export default function Signals() {
     const interval = setInterval(load, 60000)
     return () => clearInterval(interval)
   }, [load])
+
+  // Live demo-forward track record (intraday only)
+  useEffect(() => {
+    if (mode !== 'intraday') {
+      setFwd(null)
+      return
+    }
+    let alive = true
+    const loadFwd = () =>
+      fetchForwardTest()
+        .then((d) => alive && setFwd(d))
+        .catch(() => {})
+    loadFwd()
+    const id = setInterval(loadFwd, 60000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [mode])
 
   // WebSocket live updates — only the daily engine pushes; ignore while on intraday
   useWebSocket({
@@ -160,6 +180,23 @@ export default function Signals() {
             Daily Edge — the cost &amp; out-of-sample validated engine (GBPUSD / EURUSD daily). Structure-based entries
             with ≥1:3 R:R.
           </p>
+        </div>
+      )}
+
+      {/* Live demo-forward track record */}
+      {isIntraday && fwd && fwd.logged_total > 0 && (
+        <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 px-4 py-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs font-mono">
+          <span className="text-sky-300 font-semibold">📊 Live forward-test</span>
+          <span className="text-zinc-400">closed <span className="text-white">{fwd.closed}</span></span>
+          <span className="text-zinc-400">win% <span className="text-white">{fwd.win_rate_pct}</span></span>
+          <span className="text-zinc-400">
+            exp <span className={fwd.expectancy_R >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fwd.expectancy_R}R</span>
+          </span>
+          <span className="text-zinc-400">
+            total <span className={fwd.total_R >= 0 ? 'text-emerald-400' : 'text-red-400'}>{fwd.total_R}R</span>
+          </span>
+          <span className="text-zinc-500">open {fwd.open} · pending {fwd.pending}</span>
+          <span className="text-zinc-600">gross of costs</span>
         </div>
       )}
 

@@ -3,6 +3,8 @@ from fastapi import APIRouter, Body
 from app.services.signal_service import get_live_signals
 from app.services.intraday_signal_service import get_intraday_signals, intraday_cache_status
 from app.crew.intraday_validator import validate_intraday_signal
+from app.crew.intraday_redetector import redetect_intraday
+from app.services.intraday_forward_test import forward_test_stats
 
 router = APIRouter()
 
@@ -27,5 +29,22 @@ def get_intraday_status():
 
 @router.post("/signals/intraday/validate")
 def validate_intraday(signal: dict = Body(...)):
-    """On-demand CrewAI desk verdict (TAKE/SKIP) on a specific 15m signal."""
+    """On-demand CrewAI desk verdict (TAKE/SKIP) on a specific 15m signal (judges the
+    engine's exact levels — same signal)."""
     return validate_intraday_signal(signal)
+
+
+@router.get("/signals/intraday/redetect")
+def redetect_intraday_route(pair: str, tf: str = "15min", session: str = "london"):
+    """INDEPENDENT second opinion: a CrewAI desk trader pulls its own candles, forms its own
+    read of the sweep (direction + levels), and compares to the engine's signal (agree/disagree)."""
+    sigs = get_intraday_signals(tf=tf, session=session)
+    engine_sig = next((s for s in sigs if str(s.get("pair", "")).upper() == pair.upper()), None)
+    return redetect_intraday(pair.upper(), tf=tf, session=session, engine_sig=engine_sig)
+
+
+@router.get("/signals/intraday/forward-test")
+def intraday_forward_test():
+    """Demo-forward stats: outcomes of every intraday signal logged live over time
+    (the real out-of-sample sample the small backtest lacks). Gross of costs."""
+    return forward_test_stats()

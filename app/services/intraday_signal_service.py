@@ -151,6 +151,12 @@ def _scan_all(tf: str, allowed_kz, key: str) -> list:
     _cache[key] = {"data": signals, "ts": time.time()}
     print(f"[intraday_signal_service] {key}: {len(signals)} signal(s) across {len(INTRADAY_PAIRS)} pairs "
           f"at {datetime.utcnow().isoformat()}")
+    # Demo-forward log: record every emitted signal (deduped) for a live track record.
+    try:
+        from app.services.intraday_forward_test import log_signals
+        log_signals(signals)
+    except Exception as e:
+        print(f"[intraday_signal_service] forward-test log error: {e}")
     return signals
 
 

@@ -168,9 +168,60 @@ export interface IntradayVerdict {
   warning?: string
 }
 
-// On-demand CrewAI desk verdict (TAKE/SKIP) on a specific 15m signal.
+// On-demand CrewAI desk verdict (TAKE/SKIP) on a specific 15m signal (judges the SAME signal).
 export const validateIntradaySignal = (signal: Signal) =>
   api.post<IntradayVerdict>('/signals/intraday/validate', signal, { timeout: 90000 }).then((r) => r.data)
+
+// INDEPENDENT second opinion: a crew agent re-detects the sweep from its own candles and can
+// disagree with the engine. Returns its own direction/levels + an agree/disagree comparison.
+export interface RedetectResult {
+  verdict: string // CONFIRM / REJECT / ERROR
+  direction?: string
+  entry?: number | null
+  stop_loss?: number | null
+  take_profit?: number | null
+  confidence?: number
+  reason?: string
+  agreement?: string
+  source?: string
+  warning?: string
+}
+
+export const redetectIntradaySignal = (pair: string, tf = '15min', session = 'london') =>
+  api
+    .get<RedetectResult>(
+      `/signals/intraday/redetect?pair=${encodeURIComponent(pair)}&tf=${encodeURIComponent(tf)}&session=${encodeURIComponent(session)}`,
+      { timeout: 90000 },
+    )
+    .then((r) => r.data)
+
+// Demo-forward track record — live outcomes of every logged intraday signal (gross of costs).
+export interface ForwardBucket {
+  trades: number
+  wins: number
+  losses: number
+  R: number
+  win_rate_pct: number
+}
+export interface ForwardTestStats {
+  note: string
+  logged_total: number
+  pending: number
+  open: number
+  expired_no_fill: number
+  closed: number
+  wins: number
+  losses: number
+  win_rate_pct: number
+  expectancy_R: number
+  total_R: number
+  by_session: Record<string, ForwardBucket>
+  by_pair: Record<string, ForwardBucket>
+  recent: Record<string, unknown>[]
+}
+
+export const fetchForwardTest = () =>
+  api.get<ForwardTestStats>('/signals/intraday/forward-test', { timeout: 60000 }).then((r) => r.data)
 
 export const fetchTradeHistory = (limit = 50) =>
   api.get<Trade[]>(`/trade-history?limit=${limit}`).then((r) => r.data)
