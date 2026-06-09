@@ -14,7 +14,7 @@ import threading
 import time
 from datetime import datetime
 
-from app.config import INTRADAY_PAIRS, INTRADAY_TIMEFRAME, INTRADAY_MIN_RR
+from app.config import INTRADAY_PAIRS, INTRADAY_TIMEFRAME, INTRADAY_MIN_RR, INTRADAY_STAND_ASIDE_NEUTRAL
 from app.services.market_data import get_forex_intraday
 from app.smart_money.intraday_engine import analyze_intraday, htf_bias_from
 
@@ -114,17 +114,21 @@ def _scan_pair(pair: str, tf: str, allowed_kz) -> dict:
         daily = get_forex_intraday(pair, interval="1day", outputsize=200)
         h4 = get_forex_intraday(pair, interval="4h", outputsize=200)
         bias, d_dir, h_dir = htf_bias_from(daily, h4)
-        if bias == "neutral":
-            return None  # no clear HTF draw -> stand aside (the methodology)
+        if bias == "neutral" and INTRADAY_STAND_ASIDE_NEUTRAL:
+            return None  # strict top-down: skip ranging pairs
+        # Trade WITH a clear bias; on a neutral pair scan both directions (htf_bias=None =
+        # the validated backtest behavior) instead of standing aside.
+        htf = bias if bias in ("bullish", "bearish") else None
         draws, draw_meta = _draw_targets(daily)
         candles = get_forex_intraday(pair, interval=tf, outputsize=500)
-        sig = analyze_intraday(pair, candles or [], htf_bias=bias, tf=tf,
+        sig = analyze_intraday(pair, candles or [], htf_bias=htf, tf=tf,
                                draw_targets=draws, allowed_killzones=allowed_kz)
     except Exception as e:
         print(f"[intraday_signal_service] {pair} {tf} error: {e}")
         return None
     if not sig:
         return None
+    sig["htf_bias"] = bias   # real HTF read for display (may be 'neutral')
     sig["htf_daily"] = d_dir
     sig["htf_4h"] = h_dir
     sig["draw_levels"] = draw_meta

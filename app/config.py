@@ -19,6 +19,10 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./forex_ai.db")
 TWELVEDATA_API_KEY=os.getenv("TWELVEDATA_API_KEY")
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
+# Polygon per-minute call cap. FREE tier = 5/min; bursting a 7-pair x 3-TF scan past it gets
+# 429'd and DROPS pairs (e.g. the one trending pair gets no data -> no signal). We pace under
+# this so fetches never fail. Raise it if you're on a paid Polygon plan. 0 = no throttle.
+POLYGON_MAX_CALLS_PER_MIN = int(os.getenv("POLYGON_MAX_CALLS_PER_MIN", "5"))
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 OANDA_API_KEY = os.getenv("OANDA_API_KEY")
 OANDA_ACCOUNT_ID = os.getenv("OANDA_ACCOUNT_ID")
@@ -69,6 +73,13 @@ INTRADAY_EQUAL_POOLS_ONLY = os.getenv("INTRADAY_EQUAL_POOLS_ONLY", "false").lowe
 # validated default is LONDON ONLY. Set INTRADAY_KILLZONES="London Open,New York Open" to watch NY.
 _kz = [k.strip() for k in os.getenv("INTRADAY_KILLZONES", "London Open").split(",") if k.strip()]
 INTRADAY_KILLZONES = set(_kz) if _kz else None
+
+# HTF handling: the +0.68R backtest ran WITHOUT a directional HTF filter (htf_bias=None),
+# but the live service was standing aside every HTF-neutral pair — far stricter than what was
+# validated, so the dashboard was empty most of the time (e.g. 6/7 majors neutral). Default now:
+# trade WITH a clear Daily+4H bias (top-down), but on a NEUTRAL pair scan BOTH directions (the
+# validated behavior) instead of standing aside. Set True to restore strict top-down-only.
+INTRADAY_STAND_ASIDE_NEUTRAL = os.getenv("INTRADAY_STAND_ASIDE_NEUTRAL", "false").lower() in ("1", "true", "yes")
 
 # Which sessions the intraday alert scheduler pushes to Telegram (and forward-test logs).
 # London is the validated edge; New York UNDERPERFORMED in the backtest (net loss) but is

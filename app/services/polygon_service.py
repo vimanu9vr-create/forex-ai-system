@@ -8,14 +8,38 @@ Forex tickers use the C: prefix, e.g. EURUSD -> C:EURUSD.
 """
 
 import math
+import threading
 import time
 import datetime as dt
 
 import requests
 
-from app.config import POLYGON_API_KEY
+from app.config import POLYGON_API_KEY, POLYGON_MAX_CALLS_PER_MIN
 
 BASE = "https://api.polygon.io"
+
+# ── Rate limiter — pace calls under the per-minute cap so a multi-pair scan never gets
+#    429'd (a 429 costs a 20s retry and can drop a pair entirely -> missing signals). ──
+_RATE_LOCK = threading.Lock()
+_call_times: list = []
+
+
+def _throttle():
+    """Block just long enough to keep Polygon calls under POLYGON_MAX_CALLS_PER_MIN."""
+    if POLYGON_MAX_CALLS_PER_MIN <= 0:
+        return
+    with _RATE_LOCK:
+        now = time.time()
+        while _call_times and now - _call_times[0] > 60.0:
+            _call_times.pop(0)
+        if len(_call_times) >= POLYGON_MAX_CALLS_PER_MIN:
+            wait = 60.0 - (now - _call_times[0]) + 0.05
+            if wait > 0:
+                time.sleep(wait)
+            now = time.time()
+            while _call_times and now - _call_times[0] > 60.0:
+                _call_times.pop(0)
+        _call_times.append(time.time())
 
 # interval -> (multiplier, timespan, minutes_per_candle)
 _TF = {
@@ -55,6 +79,7 @@ def get_polygon_candles(pair: str, interval: str = "1h", outputsize: int = 200, 
 
     for attempt in range(retries + 1):
         try:
+            _throttle()                       # stay under the per-minute cap (avoid 429 drops)
             r = requests.get(
                 url,
                 params={"apiKey": POLYGON_API_KEY, "sort": "asc", "limit": 50000},
