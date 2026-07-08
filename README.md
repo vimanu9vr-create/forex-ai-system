@@ -220,3 +220,4 @@ backtest.py                          # CLI backtest runner
 For research and education. Not financial advice. No warranty. Past/backtested performance
 does not predict future results. You are responsible for your own trading decisions and for
 complying with the laws and broker regulations of your jurisdiction.
+# forex-ai-system
