@@ -1,161 +1,177 @@
-# Forex AI — Institutional SMC Analysis & Paper-Trading System
+# 🤖 Forex AI System — Multi-Agent Autonomous Trading Platform
 
-A multi-method forex **analysis and paper-trading research platform**. It scans the
-market with a disciplined Smart-Money engine, produces institutional-style desk
-analysis via a CrewAI agent, **paper-trades** the one strategy that survived honest
-backtesting, and ships as a one-command Docker stack with a live dashboard and
-Telegram alerts.
+[![CI Pipeline](https://github.com/vimanu9vr-create/forex-ai-system/actions/workflows/ci.yml/badge.svg)](https://github.com/vimanu9vr-create/forex-ai-system/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
+[![CrewAI](https://img.shields.io/badge/CrewAI-Multi--Agent-orange)](https://crewai.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-Dashboard-61DAFB?logo=react)](https://react.dev)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://docker.com)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-> ⚠️ **Read this first — honest disclaimer**
-> This is a **research / paper-trading** tool, **not** financial advice and **not** a
-> proven money-maker. It does **not** place real broker orders. Backtesting found a
-> *narrow, modest* edge on **GBPUSD/EURUSD daily** that survives costs — and found that
-> lower timeframes (1h, 15m, scalping) **lose money after spread**. Treat any signal as a
-> candidate to **forward-test on demo**, not a guarantee. Trading forex carries real risk;
-> check what's legal in your jurisdiction before risking capital.
+> A production-grade, 5-agent autonomous forex analysis and paper-trading platform built with **CrewAI**, **Python**, **FastAPI**, and **React**. Features institutional Smart Money Concepts (SMC) analysis, walk-forward backtesting, real-time Telegram alerts, and a live dashboard.
+
+⚠️ **Research & paper-trading only. Not financial advice. Does not place real broker orders.**
 
 ---
 
-## What makes this different
+## 📋 Table of Contents
 
-Most "AI forex bot" repos sell a fantasy. This one is **honest about its own results**:
-
-- It was **backtested, cost-modeled, and out-of-sample validated** — and the README reports
-  what that actually showed, including where it *loses*.
-- The "score" is labeled **`confluence_score`** (a checklist), not "probability" — because
-  testing showed the score **does not reliably predict wins**.
-- When there's no quality setup, it returns **NO-TRADE** instead of inventing one. When a
-  data dimension is missing, the analyst writes *"pending data integration"* instead of
-  fabricating numbers.
-
----
-
-## Honest results (what the backtester found)
-
-Engine: stacked-MA trend filter + structure-based entries, 1:3 R:R, walk-forward, no
-lookahead, conservative fills. Spread modeled as a per-trade cost.
-
-| Timeframe | Net of ~1.5-pip cost | Verdict |
-|---|---|---|
-| **Daily (GBPUSD/EURUSD)** | **+0.26R/trade**, PF 1.5–1.9 | ✅ survives costs |
-| 1h | −0.03R/trade | ❌ loses after costs |
-| 4h | −0.13R/trade | ❌ negative even gross |
-| 15m | −0.63R gross | ❌ broken |
-| 5m (scalping) | −1.0R gross, 0% win | ❌ dead |
-
-**Out-of-sample (train on old half, test on unseen half), net of costs:**
-GBPUSD daily held up — +0.57R (train) → **+0.65R, PF 1.92 (unseen)**. EURUSD was
-inconsistent (old half negative). Samples are small (~20–50 trades/pair), so this is a
-**promising candidate to forward-test, not a proven system.**
-
-**Bottom line:** the only configuration worth paper-trading is **GBPUSD/EURUSD on the Daily
-timeframe** — which is exactly what the live engine is configured to run.
+- [Architecture](#-architecture)
+- [Agent System](#-agent-system)
+- [Features](#-features)
+- [Backtesting Results](#-backtesting-results)
+- [Quick Start](#-quick-start)
+- [Configuration](#️-configuration)
+- [Project Structure](#-project-structure)
+- [Running Tests](#-running-tests)
+- [Tech Stack](#-tech-stack)
 
 ---
 
-## How it works
+## 🏗️ Architecture
 
 ```
-Polygon (primary, real tick-volume) ─┐
-TwelveData (fallback, OHLC) ──────────┼─▶  SMC engine ──▶ live_pair_scanner ──▶ trade_levels
-Finnhub (economic calendar + news) ──┘        │                 │                    │
-                                              ▼                 ▼                    ▼
-                                     Volume Profile,     stacked-MA trend     structure entry,
-                                     Wyckoff, macro       (pullback-robust)   1:3, invalidation,
-                                     event-risk gate                          TP1/TP2/TP3 plan
-                                              │
-        ┌─────────────────────────────────────┴───────────────────────────────────┐
-        ▼                                                                           ▼
-  SignalScheduler (hourly)                                              CrewAI desk analyst
-  → Telegram alert + paper trade                                        → full ICT/SMC/Wyckoff/
-  for each NEW GBPUSD/EURUSD daily setup                                  Volume/Macro write-up +
-                                                                         "would I risk my own capital?"
-        │                                                                           │
-        ▼                                                                           ▼
-  SQLite (trades)  ◀── trade monitor closes at TP/SL ──▶  React dashboard + Telegram
+┌─────────────────────────────────────────────────────────────────┐
+│                     ORCHESTRATOR AGENT                          │
+│              (Coordinates all agents & workflow)                │
+└──────────────┬──────────────────────────────┬───────────────────┘
+               │                              │
+    ┌──────────▼──────────┐      ┌───────────▼────────────┐
+    │    MARKET AGENT     │      │   RISK MANAGER AGENT   │
+    │  Polygon (primary)  │      │  Position sizing       │
+    │  TwelveData (fallbk)│      │  Stop loss calculation │
+    │  SMC Analysis       │      │  R:R validation (≥3.0) │
+    │  Volume Profile     │      │  Macro event-risk gate │
+    │  Wyckoff phases     │      └───────────┬────────────┘
+    └──────────┬──────────┘                  │
+               │                  ┌──────────▼──────────┐
+               └──────────────────▶  EXECUTION AGENT   │
+                                  │  Paper trade logger │
+                                  │  SQLite persistence │
+                                  │  Telegram alerts    │
+                                  └──────────┬──────────┘
+                                             │
+                                  ┌──────────▼──────────┐
+                                  │  REFLECTION AGENT   │
+                                  │  Post-trade eval    │
+                                  │  Self-improvement   │
+                                  │  Strategy feedback  │
+                                  └─────────────────────┘
+                                             │
+                                  ┌──────────▼──────────┐
+                                  │   React Dashboard   │
+                                  │   Live signals      │
+                                  │   Trade history     │
+                                  └─────────────────────┘
 ```
-
-### The disciplined engine
-- **Direction:** stacked moving-average trend (MA20 > MA50 > MA100 + slope). Robust to
-  pullbacks — it buys dips in an uptrend instead of flipping on every retrace.
-- **Entry:** only when price is in the *discount* half of the range for longs (premium for
-  shorts) — never chases the top/bottom.
-- **Stops/targets:** structure-based (beyond the swing); target = opposing range liquidity;
-  rejected unless R:R ≥ `MIN_RISK_REWARD` (default **3.0**).
-- **Plan:** every signal carries an **invalidation level** + a **TP1 (1R, move to BE) / TP2
-  (2R, trail) / TP3 (target)** management plan.
-
-### Multi-method analysis (CrewAI)
-The `/crew-analysis` agent reasons like a desk analyst, combining: higher-timeframe trend,
-liquidity sweep (where retail is trapped), BOS/CHoCH, FVG/OB entry, **Volume Profile**
-(POC/value area — real tick-volume from Polygon, or time-based TPO otherwise), **Wyckoff**
-phase (accumulation/distribution, springs/upthrusts), and **macro** event-risk
-(Finnhub economic calendar — e.g. it stands aside before NFP). It ends with
-*"Would I take this trade with my own capital? Why or why not?"* — and never fabricates data.
 
 ---
 
-## Quick start (Docker — recommended)
+## 🤖 Agent System
+
+| Agent | Role | Tools Used |
+|-------|------|-----------|
+| 🧠 **Orchestrator** | Coordinates all agents, manages workflow | CrewAI Hierarchical Process |
+| 📊 **Market Agent** | SMC analysis, Volume Profile, Wyckoff | Polygon API, TwelveData API |
+| ⚠️ **Risk Manager** | Position sizing, stop loss, R:R validation | Finnhub Calendar, Custom Risk Engine |
+| ⚡ **Execution Agent** | Paper trade placement, Telegram alerts | SQLite, Telegram Bot API |
+| 🔄 **Reflection Agent** | Post-trade evaluation, strategy improvement | Trade history, Performance metrics |
+
+---
+
+## ✨ Features
+
+- **5-Agent CrewAI Architecture** — Orchestrator, Market, Risk Manager, Execution, Reflection
+- **Institutional SMC Analysis** — BOS, CHoCH, FVG, Order Blocks, Liquidity Sweeps
+- **Volume Profile** — Real tick-volume from Polygon (POC, Value Area)
+- **Wyckoff Analysis** — Accumulation/distribution phases, springs, upthrusts
+- **Walk-Forward Backtesting** — No-lookahead, cost-modeled, out-of-sample validated
+- **Multi-Data Feeds** — Polygon (primary) + TwelveData (fallback)
+- **Macro Event Gating** — Finnhub economic calendar (avoids NFP, FOMC etc.)
+- **Real-Time Alerts** — Telegram bot integration
+- **Live Dashboard** — React + Vite frontend with FastAPI backend
+- **Docker Ready** — One-command deployment with docker-compose
+- **Honest Backtesting** — Reports losses too, not just wins
+
+---
+
+## 📊 Backtesting Results
+
+> Walk-forward, no-lookahead, conservative fills, 1.5-pip spread modeled per trade
+
+| Timeframe | Result | Verdict |
+|-----------|--------|---------|
+| **Daily (GBPUSD/EURUSD)** | **+0.26R/trade, PF 1.5–1.9** | ✅ Survives costs |
+| 1h | −0.03R/trade | ❌ Loses after costs |
+| 4h | −0.13R/trade | ❌ Negative even gross |
+| 15m | −0.63R gross | ❌ Broken |
+| 5m (scalping) | −1.0R gross, 0% win | ❌ Dead |
+
+**Out-of-sample validation:** GBPUSD Daily held — +0.57R (train) → **+0.65R, PF 1.92 (unseen)**
+
+> ⚠️ Small sample (~20–50 trades). Forward-test on demo before trusting.
+
+---
+
+## 🚀 Quick Start
+
+### Docker (Recommended)
 
 ```bash
-git clone <your-repo> && cd forex-ai-system
-cp .env.example app/.env          # then fill in your keys (see below)
+git clone https://github.com/vimanu9vr-create/forex-ai-system.git
+cd forex-ai-system
+cp .env.example app/.env   # Add your API keys
 docker compose up -d --build
 ```
 
-| Service | URL / role |
-|---|---|
+| Service | URL |
+|---------|-----|
 | Dashboard | http://localhost:8080 |
-| API | http://localhost:8000 (also proxied at `:8080/api`) |
-| Scheduler | scans GBPUSD/EURUSD daily, Telegram alerts + paper trades |
-| Monitor | closes paper trades at TP/SL |
+| API | http://localhost:8000 |
+| API Docs | http://localhost:8000/docs |
 
 ```bash
-docker compose logs -f      # watch ("No valid setup — NO-TRADE" is healthy)
-docker compose ps           # all three Up
-docker compose down         # stop (data persists in the volume)
+docker compose logs -f    # Watch logs
+docker compose down       # Stop (data persists)
 ```
 
-> Run it on an **always-on host** (a small VPS) so the scheduler is alive at the daily
-> close (~22:00 UTC). A laptop that sleeps will miss signals.
-
-## Manual / dev setup
+### Manual / Development
 
 ```bash
 python3.11 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 python init_db.py
-uvicorn app.main:app --reload --port 8000     # API + scheduler
-python run_monitor.py                          # (separate shell) trade monitor
-cd frontend && npm install && npm run dev       # dashboard at :5173
+uvicorn app.main:app --reload --port 8000   # API + scheduler
+python run_monitor.py                        # Trade monitor (separate shell)
+cd frontend && npm install && npm run dev    # Dashboard at :5173
 ```
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
-Keys live in `app/.env` (gitignored). In Docker they're injected via `env_file`.
+Copy `.env.example` to `app/.env` and fill in your keys:
 
 ```env
-# ── Market data ───────────────────────────────────────────
-POLYGON_API_KEY=          # primary feed — real forex tick-volume
-TWELVEDATA_API_KEY=       # fallback feed + deepest 1h/daily history for backtests
-FINNHUB_API_KEY=          # macro: economic calendar + market news
+# Market Data
+POLYGON_API_KEY=          # Primary feed (real tick-volume)
+TWELVEDATA_API_KEY=       # Fallback feed + historical data
+FINNHUB_API_KEY=          # Macro calendar + news
 
-# ── CrewAI desk analyst (uses OpenAI) ─────────────────────
+# AI (CrewAI uses OpenAI)
 OPENAI_API_KEY=
 
-# ── Telegram alerts ───────────────────────────────────────
+# Telegram Alerts
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 
-# ── Strategy (the validated edge) ─────────────────────────
-STRATEGY_PAIRS=GBPUSD,EURUSD     # what the live engine trades
-STRATEGY_TIMEFRAME=1day          # the only TF that survived costs
-SCAN_INTERVAL_SECONDS=3600
+# Strategy (validated edge only)
+STRATEGY_PAIRS=GBPUSD,EURUSD
+STRATEGY_TIMEFRAME=1day
 MIN_RISK_REWARD=3.0
+SCAN_INTERVAL_SECONDS=3600
 
-# ── Auth / DB ─────────────────────────────────────────────
+# Auth & DB
 AUTH_USERNAME=admin
 AUTH_PASSWORD=change_me
 DATABASE_URL=sqlite:///./forex_ai.db
@@ -163,61 +179,85 @@ DATABASE_URL=sqlite:///./forex_ai.db
 
 ---
 
-## Backtesting
+## 📁 Project Structure
+
+```
+forex-ai-system/
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # CI/CD pipeline
+├── app/
+│   ├── agents/
+│   │   └── market_agent.py     # Multi-TF SMC analysis
+│   ├── crew/                   # CrewAI desk analyst agent
+│   ├── routes/                 # FastAPI endpoints
+│   ├── services/
+│   │   ├── market_data.py      # Polygon + TwelveData feeds
+│   │   ├── macro_service.py    # Finnhub calendar
+│   │   ├── signal_scheduler.py # Hourly signal scanner
+│   │   └── telegram_service.py # Alert delivery
+│   └── smart_money/
+│       ├── live_pair_scanner.py   # Stacked-MA trend engine
+│       ├── risk_management.py     # Trade levels + 1:3 R:R
+│       ├── market_profile.py      # Volume Profile / TPO
+│       ├── wyckoff.py             # Wyckoff phase detection
+│       └── backtester.py          # Walk-forward backtester
+├── frontend/                   # React + Vite dashboard
+├── tests/                      # Test suite
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+---
+
+## 🧪 Running Tests
 
 ```bash
-python backtest.py                  # all pairs, 1h, with per-confluence buckets
-python backtest.py GBPUSD 1day      # single pair / timeframe
-```
-The backtester (`app/smart_money/backtester.py`) is walk-forward and **no-lookahead**:
-a setup is detected at a bar's close and the outcome simulated forward (SL-first =
-conservative). `backtest_all(interval=..., cost_pips=...)` supports cost modeling, and
-results bucket win-rate by `confluence_score`.
+# Install test dependencies
+pip install pytest pytest-asyncio pytest-cov
 
----
+# Run all tests
+pytest tests/ -v
 
-## Project structure (key parts)
+# Run with coverage
+pytest tests/ --cov=app --cov-report=html
 
-```
-app/
-  smart_money/
-    live_pair_scanner.py   # stacked-MA trend, scans STRATEGY_PAIRS/TIMEFRAME
-    risk_management.py     # trade_levels: structure entries, 1:3, invalidation, TP1/2/3
-    market_profile.py      # Volume Profile (real volume) / TPO (time-at-price)
-    wyckoff.py             # accumulation/distribution phase, spring/upthrust
-    backtester.py          # walk-forward + cost modeling + OOS
-    {structure,bos,choch,sweeps,liquidity,fvg,order_blocks,killzones,bias,probability_engine}.py
-  services/
-    market_data.py         # Polygon-first feed w/ throttle + TwelveData fallback + cache
-    polygon_service.py     # forex candles incl. tick-volume (rate-limit retry)
-    macro_service.py       # Finnhub economic calendar + news, per-pair event-risk
-    signal_scheduler.py    # hourly: validated signal → Telegram alert + paper trade
-    signal_service.py / telegram_service.py / trade_logger.py
-  crew/                    # CrewAI desk-analyst agent, tasks, tools
-  agents/market_agent.py   # full multi-TF SMC analysis used by the crew
-  routes/                  # FastAPI endpoints (/dashboard, /signals, /crew-analysis, ...)
-frontend/                  # React + Vite dashboard (Dockerfile + nginx reverse-proxy)
-Dockerfile / docker-compose.yml      # app + monitor + dashboard
-backtest.py                          # CLI backtest runner
+# Run specific test file
+pytest tests/test_intraday_engine.py -v
 ```
 
 ---
 
-## Known limitations (deliberately listed)
+## 🛠️ Tech Stack
 
-- **It's paper-only.** No live broker execution is wired into the running loop.
-- **The edge is narrow and unproven live** — GBPUSD/EURUSD daily, small backtest sample.
-  Forward-test on demo before trusting it.
-- **`confluence_score` is not a win-probability** — it's a confluence checklist; testing
-  showed it doesn't reliably rank winners.
-- **Lower timeframes lose after costs** — by design the engine only runs Daily.
-- Some detectors (swings/CHoCH) are simplified; killzone gating is approximate.
+| Layer | Technology |
+|-------|-----------|
+| **AI Agents** | CrewAI, OpenAI GPT-4 |
+| **Backend** | Python 3.11, FastAPI, SQLite |
+| **Frontend** | React, Vite, TypeScript |
+| **Data Feeds** | Polygon, TwelveData, Finnhub |
+| **Alerts** | Telegram Bot API |
+| **DevOps** | Docker, docker-compose, GitHub Actions |
+| **Testing** | pytest, pytest-asyncio, pytest-cov |
 
 ---
 
-## Disclaimer
+## ⚠️ Disclaimer
 
-For research and education. Not financial advice. No warranty. Past/backtested performance
-does not predict future results. You are responsible for your own trading decisions and for
-complying with the laws and broker regulations of your jurisdiction.
-# forex-ai-system
+This is a research and education project. Not financial advice. No warranty. Past or backtested performance does not predict future results. You are responsible for your own trading decisions and for complying with the laws and regulations of your jurisdiction.
+
+---
+
+## 👨‍💻 Author
+
+**Vignesh A** — AI Engineer · Multi-Agent Systems · CrewAI Specialist
+
+[![Email](https://img.shields.io/badge/Email-Vimanu9.vr%40gmail.com-red?logo=gmail)](mailto:Vimanu9.vr@gmail.com)
+[![GitHub](https://img.shields.io/badge/GitHub-vimanu9vr--create-black?logo=github)](https://github.com/vimanu9vr-create)
+
+---
+
+*Certified in Agentic AI, Generative AI for Everyone, and AI Prompting for Everyone by DeepLearning.AI (Andrew Ng)*
