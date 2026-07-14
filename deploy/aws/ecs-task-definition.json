@@ -1,0 +1,37 @@
+{
+  "family": "forex-ai",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/forex-ai-task-role",
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "image": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/forex-ai:latest",
+      "essential": true,
+      "portMappings": [{ "containerPort": 8000, "protocol": "tcp" }],
+      "command": ["sh", "-c", "python init_db.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"],
+      "environment": [
+        { "name": "DATABASE_URL", "value": "sqlite:////data/forex_ai.db" },
+        { "name": "AWS_S3_BUCKET", "value": "forex-ai-artifacts" },
+        { "name": "AWS_REGION", "value": "<REGION>" },
+        { "name": "INTRADAY_PAIRS", "value": "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD" }
+      ],
+      "secrets": [
+        { "name": "POLYGON_API_KEY", "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:forex-ai/POLYGON_API_KEY" },
+        { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:forex-ai/OPENAI_API_KEY" },
+        { "name": "TELEGRAM_BOT_TOKEN", "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:forex-ai/TELEGRAM_BOT_TOKEN" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/forex-ai",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "app"
+        }
+      }
+    }
+  ]
+}

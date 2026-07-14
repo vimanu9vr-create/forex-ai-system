@@ -23,6 +23,13 @@ POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
 # 429'd and DROPS pairs (e.g. the one trending pair gets no data -> no signal). We pace under
 # this so fetches never fail. Raise it if you're on a paid Polygon plan. 0 = no throttle.
 POLYGON_MAX_CALLS_PER_MIN = int(os.getenv("POLYGON_MAX_CALLS_PER_MIN", "5"))
+
+# ── AWS (boto3) — durable artifact storage on S3 ─────────────────────────────
+# Set AWS_S3_BUCKET + credentials (env vars locally, or an IAM task role on ECS/EC2) to
+# persist the intraday forward-test log + backtest artifacts to S3, so the paper-trading
+# track record survives container/instance replacement. All S3 calls no-op gracefully if unset.
+AWS_S3_BUCKET = os.getenv("AWS_S3_BUCKET", "")
+AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION", "")
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 OANDA_API_KEY = os.getenv("OANDA_API_KEY")
 OANDA_ACCOUNT_ID = os.getenv("OANDA_ACCOUNT_ID")

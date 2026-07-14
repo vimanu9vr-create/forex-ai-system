@@ -129,6 +129,7 @@ from app.routes.signals import(
     router as signals_router
 )
 from app.routes.graph import router as graph_router
+from app.routes.aws import router as aws_router
 from app.routes.realtime import(
     router as realtime_router
 )
@@ -234,6 +235,7 @@ app.include_router(dashboard_router)
 app.include_router(scheduler_router)
 app.include_router(signals_router)
 app.include_router(graph_router)
+app.include_router(aws_router)
 app.include_router(realtime_router)
 app.include_router(trades_router)
 app.include_router(auth_router)
