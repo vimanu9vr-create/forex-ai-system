@@ -11,14 +11,14 @@ import time
 import threading
 from datetime import datetime
 
-from app.config import INTRADAY_ALERT_SESSIONS
+from app.config import INTRADAY_ALERT_SESSIONS, INTRADAY_ALERT_GRADES
 from app.services.intraday_signal_service import get_intraday_signals
 from app.services.telegram_service import send_telegram_message
 from app.smart_money.killzones import in_killzone
 
 INTERVAL_SECONDS = 300            # 5 min while a killzone is open
 ENTRY_TFS = ("15min", "5min")
-ALERT_GRADES = ("A+", "A")        # only the disciplined setups get pushed
+ALERT_GRADES = INTRADAY_ALERT_GRADES   # which grades get pushed (default A+/A/B — includes B)
 _KZ_TO_SESSION = {"London Open": "london", "New York Open": "newyork"}
 
 

@@ -48,6 +48,10 @@ MIN_RISK_REWARD = float(os.getenv("MIN_RISK_REWARD", "3.0"))
 # Only GBPUSD + EURUSD on the DAILY timeframe survived costs AND out-of-sample
 # testing, so that's what the live engine trades. Override via env vars.
 STRATEGY_PAIRS = [p.strip().upper() for p in os.getenv("STRATEGY_PAIRS", "GBPUSD,EURUSD").split(",") if p.strip()]
+# Pairs shown on the dashboard's daily scanner tab (VISIBILITY — a read per pair even with no
+# A+ setup). Broader than STRATEGY_PAIRS, which stays the validated GBPUSD/EURUSD daily edge used
+# for actual Telegram alerts + paper trades. Env-overridable.
+DASHBOARD_PAIRS = [p.strip().upper() for p in os.getenv("DASHBOARD_PAIRS", "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD").split(",") if p.strip()]
 STRATEGY_TIMEFRAME = os.getenv("STRATEGY_TIMEFRAME", "1day")
 SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "3600"))  # hourly; daily signals change slowly
 
@@ -93,3 +97,8 @@ INTRADAY_STAND_ASIDE_NEUTRAL = os.getenv("INTRADAY_STAND_ASIDE_NEUTRAL", "false"
 # enabled here so its live signals are delivered + tracked. "london" / "newyork" / both.
 INTRADAY_ALERT_SESSIONS = {s.strip().lower() for s in
                            os.getenv("INTRADAY_ALERT_SESSIONS", "london,newyork").split(",") if s.strip()}
+
+# Grades the intraday alert scheduler pushes to Telegram. Default now INCLUDES B so every valid
+# setup is notified (user request); set to "A+,A" for only the highest-conviction alerts.
+INTRADAY_ALERT_GRADES = tuple(g.strip() for g in
+                              os.getenv("INTRADAY_ALERT_GRADES", "A+,A,B").split(",") if g.strip())

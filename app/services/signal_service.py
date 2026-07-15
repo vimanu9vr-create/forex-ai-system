@@ -7,12 +7,8 @@ from app.smart_money.risk_management import trade_levels
 # ── Signal-level cache ─────────────────────────────────────────────────────
 # Caches the fully-built signal list so the scanner only runs once per TTL
 # regardless of how many WebSocket clients / HTTP polling hits arrive.
-_signal_cache: dict = {"data": [], "ts": 0.0}
+_signal_cache: dict = {}   # cache key ("all"/"disc" + pairs) -> {"data": [...], "ts": float}
 SIGNAL_CACHE_TTL = 300  # 5 minutes — matches TwelveData candle interval
-
-
-def _signals_fresh() -> bool:
-    return (time.time() - _signal_cache["ts"]) < SIGNAL_CACHE_TTL
 
 
 def normalize_side(direction):
@@ -34,41 +30,56 @@ def normalize_probability(value):
     return int(max(0, min(probability, 100)))
 
 
-def build_signal_from_scan(scan_result):
+def build_signal_from_scan(scan_result, show_all=False):
     """
-    Build a dashboard signal from a scan result, or return None when there is
-    no disciplined trade — i.e. no HTF-aligned direction, or price is not
-    well-located for a >=1.5R structural entry. Returning None means the pair
-    simply isn't shown, instead of surfacing a losing signal.
+    Build a dashboard signal from a scan result.
+
+    Disciplined mode (show_all=False, used by the SignalScheduler/alerts): returns None when
+    there's no HTF-aligned direction or price isn't well-located for a >=1.5R entry — the pair
+    is hidden rather than surfacing a losing signal.
+
+    Dashboard mode (show_all=True): ALWAYS returns a row so every scanned pair is visible — a
+    full setup (entry/SL/TP) when disciplined, otherwise a 'watch' row with the current
+    direction/bias + confluence score and no executable levels.
     """
     pair = scan_result.get("pair", "EURUSD")
     side = normalize_side(scan_result.get("direction"))
     candles = scan_result.get("candles") or []
+    score = normalize_probability(scan_result.get("confluence_score", scan_result.get("probability_score", 0)))
 
-    if side not in {"BUY", "SELL"} or not candles:
-        return None  # no HTF-aligned directional bias
+    levels = {}
+    if side in {"BUY", "SELL"} and candles:
+        try:
+            levels = trade_levels(pair=pair, direction=side, candles=candles)
+        except Exception:
+            levels = {}
+    disciplined = bool(side in {"BUY", "SELL"} and levels.get("valid"))
 
-    try:
-        levels = trade_levels(pair=pair, direction=side, candles=candles)
-    except Exception:
-        return None
+    if not disciplined and not show_all:
+        return None  # keep alerts/validated path clean
 
-    if not levels.get("valid"):
-        return None  # price not well-located for a disciplined entry
+    if disciplined:
+        entry, sl, tp = levels.get("entry_price", 0), levels.get("stop_loss", 0), levels.get("take_profit", 0)
+        rr, setup = levels.get("risk_reward", "N/A"), levels.get("reason", "")
+    else:
+        entry = sl = tp = 0            # watch row — no executable entry (Execute button hides on entry<=0)
+        rr = "N/A"
+        setup = (f"No A+ entry — {side} bias, watching" if side in ("BUY", "SELL")
+                 else "Ranging / no clear HTF trend — watching")
 
-    score = scan_result.get("confluence_score", scan_result.get("probability_score", 0))
     return {
         "pair": pair,
-        "signal": side,
-        "entry": levels.get("entry_price", 0),
-        "stop_loss": levels.get("stop_loss", 0),
-        "take_profit": levels.get("take_profit", 0),
-        "confluence_score": normalize_probability(score),
+        "signal": side,                # BUY / SELL / HOLD
+        "entry": entry,
+        "stop_loss": sl,
+        "take_profit": tp,
+        "confluence_score": score,
         "timeframe": scan_result.get("timeframe", "1h"),
         "model": "Smart Money AI",
         "session": scan_result.get("session", "N/A"),
-        "risk_reward": levels.get("risk_reward", "N/A"),
-        "setup": levels.get("reason", ""),
+        "risk_reward": rr,
+        "setup": setup,
+        "status": "setup" if disciplined else "watch",
         "htf_aligned": scan_result.get("htf_aligned", False),
         "bias": scan_result.get("signal_data", {}).get("bias", scan_result.get("bias")),
         "killzone": scan_result.get("signal_data", {}).get("killzone_active"),
@@ -76,24 +87,29 @@ def build_signal_from_scan(scan_result):
     }
 
 
-def get_live_signals(force: bool = False) -> list:
+def get_live_signals(force: bool = False, pairs=None, show_all: bool = False) -> list:
     """
     Return cached signals if fresh, otherwise run the scanner.
-    All WebSocket pushes and HTTP /signals hits share the same cache,
-    so TwelveData is called at most once per SIGNAL_CACHE_TTL seconds.
+
+    pairs    — which pairs to scan (default STRATEGY_PAIRS, resolved in the scanner).
+    show_all — dashboard mode: surface a row for EVERY scanned pair (high-probability setups
+               sort to the top; low-conviction pairs show as 'watch' rows). Disciplined mode
+               (default) hides non-setups — used by the SignalScheduler/alerts.
+
+    Cached per (mode, pairs) so the dashboard's all-pairs view and the scheduler's validated
+    2-pair view don't clobber each other's cache.
     """
-    global _signal_cache
+    key = f"{'all' if show_all else 'disc'}:{','.join(pairs or [])}"
+    slot = _signal_cache.get(key)
+    if not force and slot and (time.time() - slot["ts"]) < SIGNAL_CACHE_TTL:
+        return slot["data"]
 
-    if not force and _signals_fresh():
-        return _signal_cache["data"]
-
-    print(f"[signal_service] Cache miss — running live_pair_scanner at {datetime.utcnow().isoformat()}")
-
+    print(f"[signal_service] Cache miss ({key}) — running live_pair_scanner at {datetime.utcnow().isoformat()}")
     try:
-        scanner_payload = live_pair_scanner()
+        scanner_payload = live_pair_scanner(pairs=pairs)
     except Exception as e:
         print(f"[signal_service] Scanner error: {e}")
-        return _signal_cache["data"]  # serve stale on error
+        return slot["data"] if slot else []   # serve stale on error
 
     scanned_pairs = scanner_payload.get("all_scanned_pairs", [])
     if not scanned_pairs and scanner_payload.get("best_pair"):
@@ -103,21 +119,23 @@ def get_live_signals(force: bool = False) -> list:
     for r in scanned_pairs:
         if not isinstance(r, dict):
             continue
-        sig = build_signal_from_scan(r)
-        if sig:               # None = no disciplined setup for this pair
+        sig = build_signal_from_scan(r, show_all=show_all)
+        if sig:               # None only in disciplined mode (no A+ setup)
             signals.append(sig)
     signals.sort(key=lambda s: s["confluence_score"], reverse=True)
 
-    _signal_cache = {"data": signals, "ts": time.time()}
-    print(f"[signal_service] Cached {len(signals)} signals (TTL {SIGNAL_CACHE_TTL}s)")
+    _signal_cache[key] = {"data": signals, "ts": time.time()}
+    print(f"[signal_service] Cached {len(signals)} signals for {key} (TTL {SIGNAL_CACHE_TTL}s)")
     return signals
 
 
 def signal_cache_status() -> dict:
-    age = round(time.time() - _signal_cache["ts"])
-    return {
-        "cached_signals": len(_signal_cache["data"]),
-        "age_seconds": age,
-        "expires_in_seconds": max(0, SIGNAL_CACHE_TTL - age),
-        "ttl_seconds": SIGNAL_CACHE_TTL,
-    }
+    out = {"ttl_seconds": SIGNAL_CACHE_TTL, "modes": {}}
+    for key, slot in _signal_cache.items():
+        age = round(time.time() - slot["ts"])
+        out["modes"][key] = {
+            "cached_signals": len(slot["data"]),
+            "age_seconds": age,
+            "expires_in_seconds": max(0, SIGNAL_CACHE_TTL - age),
+        }
+    return out

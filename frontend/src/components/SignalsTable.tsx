@@ -23,6 +23,9 @@ function biasLabel(bias: Signal['bias']): string {
   return '—'
 }
 
+// Watch rows (no A+ entry) carry 0 levels — render those as an em dash, not 0.00000.
+const fmt = (n: number | undefined | null) => (n && Number(n) !== 0 ? Number(n).toFixed(5) : '—')
+
 export default function SignalsTable({ signals, onExecute }: Props) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'ALL' | 'BUY' | 'SELL'>('ALL')
@@ -201,9 +204,9 @@ export default function SignalsTable({ signals, onExecute }: Props) {
                             {signal.signal.toUpperCase()}
                           </span>
                         </td>
-                        <td className="table-cell">{Number(signal.entry).toFixed(5)}</td>
-                        <td className="table-cell text-red-400">{Number(signal.stop_loss).toFixed(5)}</td>
-                        <td className="table-cell text-emerald-400">{Number(signal.take_profit).toFixed(5)}</td>
+                        <td className="table-cell">{fmt(signal.entry)}</td>
+                        <td className="table-cell text-red-400">{fmt(signal.stop_loss)}</td>
+                        <td className="table-cell text-emerald-400">{fmt(signal.take_profit)}</td>
                         <td className="table-cell">
                           <div className="flex items-center gap-2">
                             <div className="flex-1 bg-zinc-800 rounded-full h-1.5 max-w-[60px]">
@@ -279,9 +282,9 @@ export default function SignalsTable({ signals, onExecute }: Props) {
 
             <div className="grid grid-cols-2 gap-3 font-mono text-sm">
               {([
-                ['Entry Price', Number(selected.entry).toFixed(5), 'text-white'],
-                ['Stop Loss', Number(selected.stop_loss).toFixed(5), 'text-red-400'],
-                ['Take Profit', Number(selected.take_profit).toFixed(5), 'text-emerald-400'],
+                ['Entry Price', fmt(selected.entry), 'text-white'],
+                ['Stop Loss', fmt(selected.stop_loss), 'text-red-400'],
+                ['Take Profit', fmt(selected.take_profit), 'text-emerald-400'],
                 ['Confluence', `${selected.confluence_score}%`, selected.confluence_score >= 85 ? 'text-emerald-400' : 'text-yellow-400'],
                 ['Risk/Reward', String(selected.risk_reward || '—'), 'text-blue-400'],
                 ['Session', selected.session || '—', 'text-zinc-300'],

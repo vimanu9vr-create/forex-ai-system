@@ -41,10 +41,10 @@ def _trend_direction(candles) -> str:
     return "neutral"
 
 
-def live_pair_scanner():
+def live_pair_scanner(pairs=None):
     scanned_pairs = []
 
-    for pair in STRATEGY_PAIRS:
+    for pair in (pairs or STRATEGY_PAIRS):
         candles = get_forex_intraday(pair, interval=STRATEGY_TIMEFRAME, outputsize=300)
         if not candles or len(candles) < 110:
             continue
