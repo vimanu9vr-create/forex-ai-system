@@ -15,7 +15,8 @@ import re
 
 from crewai import Agent, Task, Crew
 
-from app.config import OPENAI_API_KEY
+from app.config import OPENAI_API_KEY, LLM_PROVIDER
+from app.crew.llm import get_crew_llm
 
 _validator_agent = Agent(
     role="Proprietary FX Desk Trader — Intraday Liquidity (ICT / SMC)",
@@ -29,6 +30,7 @@ _validator_agent = Agent(
                "numbers — you judge only the levels you are given."),
     verbose=False,
     max_iter=2,
+    llm=get_crew_llm(),   # Bedrock when LLM_PROVIDER=bedrock, else CrewAI default (OpenAI)
 )
 
 
@@ -114,8 +116,8 @@ def validate_intraday_signal(sig: dict) -> dict:
     if not sig:
         return {"verdict": "SKIP", "confidence": 0, "reason": "no signal provided",
                 "source": "rule_based_fallback", "raw": ""}
-    if not OPENAI_API_KEY:
-        return _rule_based(sig)
+    if LLM_PROVIDER != "bedrock" and not OPENAI_API_KEY:
+        return _rule_based(sig)   # no LLM configured (neither Bedrock nor OpenAI)
     try:
         crew = Crew(agents=[_validator_agent], tasks=[_task(sig)], verbose=False, tracing=False)
         raw = _to_text(crew.kickoff())

@@ -30,6 +30,13 @@ POLYGON_MAX_CALLS_PER_MIN = int(os.getenv("POLYGON_MAX_CALLS_PER_MIN", "5"))
 # track record survives container/instance replacement. All S3 calls no-op gracefully if unset.
 AWS_S3_BUCKET = os.getenv("AWS_S3_BUCKET", "")
 AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION", "")
+
+# ── LLM provider — OpenAI (default) or Amazon Bedrock for the CrewAI agents ───
+# Set LLM_PROVIDER=bedrock to run the desk crew / validators / re-detector on Bedrock (Claude)
+# instead of OpenAI. Uses the standard AWS credential chain (env / IAM role — no keys in code).
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()          # "openai" | "bedrock"
+BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
+BEDROCK_REGION = os.getenv("BEDROCK_REGION") or AWS_REGION or "us-east-1"
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 OANDA_API_KEY = os.getenv("OANDA_API_KEY")
 OANDA_ACCOUNT_ID = os.getenv("OANDA_ACCOUNT_ID")
