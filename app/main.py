@@ -177,9 +177,11 @@ async def lifespan(app: FastAPI):
         # Daily dashboard (all-pairs show_all) so /signals + the WS are ready right after a
         # restart instead of a ~90s cold throttled scan.
         try:
-            from app.config import DASHBOARD_PAIRS
+            from app.config import DASHBOARD_PAIRS, DASHBOARD_TIMEFRAMES
             from app.services.signal_service import get_live_signals
-            get_live_signals(force=True, pairs=DASHBOARD_PAIRS, show_all=True)
+            # force=True + the SAME pairs/timeframes the /signals route uses, so the exact cache
+            # key the dashboard reads is warm (multi-TF scan is slow; do it once at startup).
+            get_live_signals(force=True, pairs=DASHBOARD_PAIRS, timeframes=DASHBOARD_TIMEFRAMES, show_all=True)
         except Exception as e:
             print(f"[main] daily pre-warm error: {e}")
         try:

@@ -1,3 +1,4 @@
+import threading
 import time
 from datetime import datetime
 
@@ -9,6 +10,12 @@ from app.smart_money.risk_management import trade_levels
 # regardless of how many WebSocket clients / HTTP polling hits arrive.
 _signal_cache: dict = {}   # cache key ("all"/"disc" + pairs) -> {"data": [...], "ts": float}
 SIGNAL_CACHE_TTL = 300  # 5 minutes — matches TwelveData candle interval
+
+# Stale-while-revalidate: a multi-TF dashboard scan can take minutes on the throttled Polygon
+# tier, so a synchronous /signals call would time out the frontend ("network error"). Non-force
+# calls return cached/empty INSTANTLY and refresh in a background thread (single-flight per key).
+_refreshing: set = set()
+_refresh_lock = threading.Lock()
 
 
 def normalize_side(direction):
@@ -103,15 +110,27 @@ def get_live_signals(force: bool = False, pairs=None, timeframes=None, show_all:
     """
     key = f"{'all' if show_all else 'disc'}:{','.join(pairs or [])}:{','.join(timeframes or [])}"
     slot = _signal_cache.get(key)
-    if not force and slot and (time.time() - slot["ts"]) < SIGNAL_CACHE_TTL:
-        return slot["data"]
+    fresh = slot and (time.time() - slot["ts"]) < SIGNAL_CACHE_TTL
 
-    print(f"[signal_service] Cache miss ({key}) — running live_pair_scanner at {datetime.utcnow().isoformat()}")
+    if fresh and not force:
+        return slot["data"]
+    if force:
+        return _scan_and_cache(key, pairs, timeframes, show_all)   # synchronous (scheduler / pre-warm)
+
+    # Stale-while-revalidate: refresh in the background, return stale/empty NOW so the caller
+    # (dashboard) never blocks on a multi-minute throttled scan.
+    _kick_background_refresh(key, pairs, timeframes, show_all)
+    return slot["data"] if slot else []
+
+
+def _scan_and_cache(key: str, pairs, timeframes, show_all: bool) -> list:
+    """Run the scanner, build + cache signals for `key`. Blocking; serves stale on error."""
+    print(f"[signal_service] Scanning ({key}) at {datetime.utcnow().isoformat()}")
     try:
         scanner_payload = live_pair_scanner(pairs=pairs, timeframes=timeframes)
     except Exception as e:
         print(f"[signal_service] Scanner error: {e}")
-        return slot["data"] if slot else []   # serve stale on error
+        return _signal_cache.get(key, {}).get("data", [])   # serve stale on error
 
     scanned_pairs = scanner_payload.get("all_scanned_pairs", [])
     if not scanned_pairs and scanner_payload.get("best_pair"):
@@ -129,6 +148,23 @@ def get_live_signals(force: bool = False, pairs=None, timeframes=None, show_all:
     _signal_cache[key] = {"data": signals, "ts": time.time()}
     print(f"[signal_service] Cached {len(signals)} signals for {key} (TTL {SIGNAL_CACHE_TTL}s)")
     return signals
+
+
+def _kick_background_refresh(key: str, pairs, timeframes, show_all: bool):
+    """Start a single-flight background scan for `key` (no-op if one is already running)."""
+    with _refresh_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+
+    def _run():
+        try:
+            _scan_and_cache(key, pairs, timeframes, show_all)
+        finally:
+            with _refresh_lock:
+                _refreshing.discard(key)
+
+    threading.Thread(target=_run, daemon=True, name="signal-refresh").start()
 
 
 def signal_cache_status() -> dict:
