@@ -58,14 +58,15 @@ def build_signal_from_scan(scan_result, show_all=False):
     if not disciplined and not show_all:
         return None  # keep alerts/validated path clean
 
-    if disciplined:
-        entry, sl, tp = levels.get("entry_price", 0), levels.get("stop_loss", 0), levels.get("take_profit", 0)
-        rr, setup = levels.get("risk_reward", "N/A"), levels.get("reason", "")
-    else:
-        entry = sl = tp = 0            # watch row — no executable entry (Execute button hides on entry<=0)
-        rr = "N/A"
-        setup = (f"No A+ entry — {side} bias, watching" if side in ("BUY", "SELL")
-                 else "Ranging / no clear HTF trend — watching")
+    # Show the computed entry/SL/TP whether it's an A+ setup (disciplined) or an INDICATIVE
+    # watch trade. trade_levels now returns levels even when valid=False (directional pairs);
+    # HOLD/neutral pairs get 0s (rendered as "—" in the UI).
+    entry = levels.get("entry_price", 0)
+    sl = levels.get("stop_loss", 0)
+    tp = levels.get("take_profit", 0)
+    rr = levels.get("risk_reward", "N/A")
+    setup = levels.get("reason") or (
+        f"{side} bias — watching" if side in ("BUY", "SELL") else "Ranging / no clear HTF trend — watching")
 
     return {
         "pair": pair,
