@@ -20,8 +20,13 @@ Instance → **Connect using SSH** (browser terminal), then:
 ```bash
 sudo apt-get update && sudo apt-get install -y git
 git clone https://github.com/vimanu9vr-create/forex-ai-system.git
-cd forex-ai-system && bash deploy/lightsail/setup.sh
+cd forex-ai-system
+git checkout feature/langgraph-aws   # all the latest fixes live here until the PR is merged to main
+bash deploy/lightsail/setup.sh
 ```
+
+> Once you merge the `feature/langgraph-aws` PR into `main`, drop the `git checkout` line and
+> just deploy from `main`. (Right now `main` is the old pre-fix code — do **not** deploy it.)
 
 The script installs Docker + swap, then writes a template `app/.env` and stops. Fill in your keys:
 
