@@ -88,26 +88,27 @@ def build_signal_from_scan(scan_result, show_all=False):
     }
 
 
-def get_live_signals(force: bool = False, pairs=None, show_all: bool = False) -> list:
+def get_live_signals(force: bool = False, pairs=None, timeframes=None, show_all: bool = False) -> list:
     """
     Return cached signals if fresh, otherwise run the scanner.
 
-    pairs    — which pairs to scan (default STRATEGY_PAIRS, resolved in the scanner).
-    show_all — dashboard mode: surface a row for EVERY scanned pair (high-probability setups
-               sort to the top; low-conviction pairs show as 'watch' rows). Disciplined mode
-               (default) hides non-setups — used by the SignalScheduler/alerts.
+    pairs      — which pairs to scan (default STRATEGY_PAIRS, resolved in the scanner).
+    timeframes — which timeframes (15min, 1h, 4h, 1day, etc.). Default STRATEGY_TIMEFRAME.
+    show_all   — dashboard mode: surface a row for EVERY scanned pair (high-probability setups
+                 sort to the top; low-conviction pairs show as 'watch' rows). Disciplined mode
+                 (default) hides non-setups — used by the SignalScheduler/alerts.
 
     Cached per (mode, pairs) so the dashboard's all-pairs view and the scheduler's validated
     2-pair view don't clobber each other's cache.
     """
-    key = f"{'all' if show_all else 'disc'}:{','.join(pairs or [])}"
+    key = f"{'all' if show_all else 'disc'}:{','.join(pairs or [])}:{','.join(timeframes or [])}"
     slot = _signal_cache.get(key)
     if not force and slot and (time.time() - slot["ts"]) < SIGNAL_CACHE_TTL:
         return slot["data"]
 
     print(f"[signal_service] Cache miss ({key}) — running live_pair_scanner at {datetime.utcnow().isoformat()}")
     try:
-        scanner_payload = live_pair_scanner(pairs=pairs)
+        scanner_payload = live_pair_scanner(pairs=pairs, timeframes=timeframes)
     except Exception as e:
         print(f"[signal_service] Scanner error: {e}")
         return slot["data"] if slot else []   # serve stale on error

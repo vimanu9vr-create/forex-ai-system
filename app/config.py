@@ -60,6 +60,10 @@ STRATEGY_PAIRS = [p.strip().upper() for p in os.getenv("STRATEGY_PAIRS", "GBPUSD
 # for actual Telegram alerts + paper trades. Env-overridable.
 DASHBOARD_PAIRS = [p.strip().upper() for p in os.getenv("DASHBOARD_PAIRS", "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD").split(",") if p.strip()]
 STRATEGY_TIMEFRAME = os.getenv("STRATEGY_TIMEFRAME", "1day")
+# Timeframes scanned for the dashboard's all-pairs daily view. Multiple TFs = richer coverage.
+# Default: 15min (intraday micro), 1h (intraday swing), 4h (daily swing), 1day (trend).
+DASHBOARD_TIMEFRAMES = tuple(tf.strip() for tf in
+                             os.getenv("DASHBOARD_TIMEFRAMES", "15min,1h,4h,1day").split(",") if tf.strip())
 SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "3600"))  # hourly; daily signals change slowly
 
 # ── Intraday engine: SEPARATE, UNVALIDATED 15m liquidity-sweep day-trading engine ──

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Body
 
-from app.config import DASHBOARD_PAIRS
+from app.config import DASHBOARD_PAIRS, DASHBOARD_TIMEFRAMES
 from app.services.signal_service import get_live_signals
 from app.services.intraday_signal_service import get_intraday_signals, intraday_cache_status
 from app.crew.intraday_validator import validate_intraday_signal
@@ -12,9 +12,10 @@ router = APIRouter()
 
 @router.get("/signals")
 def get_signals():
-    """Daily scanner feed — a read for EVERY dashboard pair. High-probability setups sort to
-    the top with full entry/SL/TP; low-conviction pairs appear as 'watch' rows."""
-    return get_live_signals(pairs=DASHBOARD_PAIRS, show_all=True)
+    """Daily scanner feed — a read for EVERY dashboard pair x timeframe. High-probability setups
+    sort to the top with full entry/SL/TP; low-conviction pairs appear as 'watch' rows. Multiple
+    TFs (15m/1h/4h/1day) = 28 rows (7 pairs × 4 TFs)."""
+    return get_live_signals(pairs=DASHBOARD_PAIRS, timeframes=DASHBOARD_TIMEFRAMES, show_all=True)
 
 
 @router.get("/signals/intraday")
