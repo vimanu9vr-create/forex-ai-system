@@ -173,13 +173,21 @@ async def lifespan(app: FastAPI):
     # of [] (the cold 7-pair scan takes ~2min on the rate-limited free tier). Warming the
     # London 15m view also warms the shared raw market data for all pairs, so NY / Both /
     # 5m then resolve from cache. Daemon thread → does not delay server readiness.
-    def _prewarm_intraday():
+    def _prewarm():
+        # Daily dashboard (all-pairs show_all) so /signals + the WS are ready right after a
+        # restart instead of a ~90s cold throttled scan.
+        try:
+            from app.config import DASHBOARD_PAIRS
+            from app.services.signal_service import get_live_signals
+            get_live_signals(force=True, pairs=DASHBOARD_PAIRS, show_all=True)
+        except Exception as e:
+            print(f"[main] daily pre-warm error: {e}")
         try:
             from app.services.intraday_signal_service import get_intraday_signals
             get_intraday_signals(force=True, tf="15min", session="london")
         except Exception as e:
             print(f"[main] intraday pre-warm error: {e}")
-    threading.Thread(target=_prewarm_intraday, daemon=True, name="intraday-prewarm").start()
+    threading.Thread(target=_prewarm, daemon=True, name="prewarm").start()
     yield
     print("[main] 🛑 Server shutting down — stopping schedulers...")
     stop_signal_scheduler()
