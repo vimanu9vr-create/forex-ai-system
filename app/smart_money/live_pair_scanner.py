@@ -48,13 +48,16 @@ def live_pair_scanner(pairs=None, timeframes=None):
     tfs = timeframes or (STRATEGY_TIMEFRAME,)
 
     for pair in (pairs or STRATEGY_PAIRS):
-        # Fetch Daily/4H once per pair (shared for HTF bias across all TFs, reduces API calls 7x)
-        daily = get_forex_intraday(pair, interval="1day", outputsize=100) or []
-        h4 = get_forex_intraday(pair, interval="4h", outputsize=100) or []
-        # Use daily for the trend; if daily is short, the _trend_direction will fallback to neutral
+        # Daily fetched ONCE per pair for the stacked-MA trend filter (300 candles so the
+        # 110-bar trend actually computes — the old 100 always returned neutral). Reused for
+        # the 1day row below, so it's never double-fetched. (Dropped the dead 4H fetch.)
+        daily = get_forex_intraday(pair, interval="1day", outputsize=300) or []
+        direction = _trend_direction(daily) if len(daily) >= 110 else "neutral"
+        trend_confirmed = direction in ("buy", "sell")
 
         for tf in tfs:
-            candles = get_forex_intraday(pair, interval=tf, outputsize=300)
+            # Reuse the daily candles for the 1day row instead of re-fetching them.
+            candles = daily if tf == "1day" else get_forex_intraday(pair, interval=tf, outputsize=300)
             if not candles or len(candles) < 110:
                 continue
 
@@ -75,10 +78,7 @@ def live_pair_scanner(pairs=None, timeframes=None):
             order_blocks = detect_order_blocks(candles)
             killzone_info = detect_killzone()
 
-            # Use the (once-per-pair) daily candles for trend direction, not the current TF
-            # (so all TFs of a pair see the same trend — the validated 1day stacked-MA bias)
-            direction = _trend_direction(daily) if daily else "neutral"
-            trend_confirmed = direction in ("buy", "sell")
+            # direction/trend_confirmed computed once per pair (above) from the daily stacked-MA.
             structure_bias = determine_market_bias(bullish_bos, bearish_bos, choch_bullish, choch_bearish)
 
             sweeps_arg = {"swept": len(sweeps_all) > 0, "sweeps": sweeps_all}
@@ -115,7 +115,9 @@ def live_pair_scanner(pairs=None, timeframes=None):
                 "direction": direction,
                 "htf_aligned": trend_confirmed,
                 "session": killzone_info.get("killzone", "N/A"),
-                "candles": candles,
+                # Only the last ~40 candles are needed downstream (trade_levels uses the last 20).
+                # Retaining all 300 × 28 rows OOM-killed the container (exit 137). Keep it small.
+                "candles": candles[-40:],
                 "sniper_signal": {"entry": trend_confirmed and confluence_score >= 80, "direction": direction},
                 "sweeps": sweeps_all,
                 "choch": [choch_bullish, choch_bearish],

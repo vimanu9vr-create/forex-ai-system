@@ -2,7 +2,7 @@ import asyncio
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.config import DASHBOARD_PAIRS
+from app.config import DASHBOARD_PAIRS, DASHBOARD_TIMEFRAMES
 from app.services.signal_service import get_live_signals
 
 router = APIRouter()
@@ -17,11 +17,11 @@ async def signals_socket(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            # Push the SAME all-pairs dashboard view as the HTTP /signals route (show_all over
-            # DASHBOARD_PAIRS) — otherwise the WS would override it with the disciplined 2-pair set.
+            # Push the SAME all-pairs, all-timeframes view as the HTTP /signals route (same cache
+            # key) — otherwise the WS would override it with a different (1-TF / 2-pair) set.
             await websocket.send_json({
                 "type": "signals",
-                "signals": get_live_signals(pairs=DASHBOARD_PAIRS, show_all=True),
+                "signals": get_live_signals(pairs=DASHBOARD_PAIRS, timeframes=DASHBOARD_TIMEFRAMES, show_all=True),
             })
             await asyncio.sleep(WS_PUSH_INTERVAL)
     except WebSocketDisconnect:

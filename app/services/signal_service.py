@@ -9,7 +9,8 @@ from app.smart_money.risk_management import trade_levels
 # Caches the fully-built signal list so the scanner only runs once per TTL
 # regardless of how many WebSocket clients / HTTP polling hits arrive.
 _signal_cache: dict = {}   # cache key ("all"/"disc" + pairs) -> {"data": [...], "ts": float}
-SIGNAL_CACHE_TTL = 300  # 5 minutes — matches TwelveData candle interval
+SIGNAL_CACHE_TTL = 900  # 15 min — the multi-TF scan takes ~6min on the free tier, so a short
+                        # TTL meant near-continuous re-scanning; daily/HTF data changes slowly.
 
 # Stale-while-revalidate: a multi-TF dashboard scan can take minutes on the throttled Polygon
 # tier, so a synchronous /signals call would time out the frontend ("network error"). Non-force
