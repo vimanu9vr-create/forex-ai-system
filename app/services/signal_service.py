@@ -124,30 +124,50 @@ def get_live_signals(force: bool = False, pairs=None, timeframes=None, show_all:
     return slot["data"] if slot else []
 
 
+def _payload_to_signals(scanner_payload, show_all: bool) -> list:
+    scanned = scanner_payload.get("all_scanned_pairs", [])
+    if not scanned and scanner_payload.get("best_pair"):
+        scanned = [scanner_payload["best_pair"]]
+    out = []
+    for r in scanned:
+        if isinstance(r, dict):
+            sig = build_signal_from_scan(r, show_all=show_all)
+            if sig:               # None only in disciplined mode (no A+ setup)
+                out.append(sig)
+    return out
+
+
 def _scan_and_cache(key: str, pairs, timeframes, show_all: bool) -> list:
-    """Run the scanner, build + cache signals for `key`. Blocking; serves stale on error."""
+    """Run the scanner, build + cache signals for `key`. Serves stale on error.
+
+    Multi-pair (dashboard) scans run PER PAIR and update the cache after each one, so rows
+    appear PROGRESSIVELY (first pair in ~1min) instead of empty-for-6min-then-all-28-at-once.
+    """
     print(f"[signal_service] Scanning ({key}) at {datetime.utcnow().isoformat()}")
+
+    if pairs and len(pairs) > 1:
+        signals = []
+        for p in pairs:
+            try:
+                payload = live_pair_scanner(pairs=[p], timeframes=timeframes)
+            except Exception as e:
+                print(f"[signal_service] scan {p} error: {e}")
+                continue
+            signals.extend(_payload_to_signals(payload, show_all))
+            signals.sort(key=lambda s: s["confluence_score"], reverse=True)
+            _signal_cache[key] = {"data": list(signals), "ts": time.time()}   # publish after each pair
+        print(f"[signal_service] Cached {len(signals)} signals for {key} (incremental, {len(pairs)} pairs)")
+        return signals
+
+    # Single/small scan (scheduler default path)
     try:
-        scanner_payload = live_pair_scanner(pairs=pairs, timeframes=timeframes)
+        payload = live_pair_scanner(pairs=pairs, timeframes=timeframes)
     except Exception as e:
         print(f"[signal_service] Scanner error: {e}")
         return _signal_cache.get(key, {}).get("data", [])   # serve stale on error
-
-    scanned_pairs = scanner_payload.get("all_scanned_pairs", [])
-    if not scanned_pairs and scanner_payload.get("best_pair"):
-        scanned_pairs = [scanner_payload["best_pair"]]
-
-    signals = []
-    for r in scanned_pairs:
-        if not isinstance(r, dict):
-            continue
-        sig = build_signal_from_scan(r, show_all=show_all)
-        if sig:               # None only in disciplined mode (no A+ setup)
-            signals.append(sig)
-    signals.sort(key=lambda s: s["confluence_score"], reverse=True)
-
+    signals = sorted(_payload_to_signals(payload, show_all), key=lambda s: s["confluence_score"], reverse=True)
     _signal_cache[key] = {"data": signals, "ts": time.time()}
-    print(f"[signal_service] Cached {len(signals)} signals for {key} (TTL {SIGNAL_CACHE_TTL}s)")
+    print(f"[signal_service] Cached {len(signals)} signals for {key}")
     return signals
 
 

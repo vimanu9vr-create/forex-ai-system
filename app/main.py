@@ -179,9 +179,9 @@ async def lifespan(app: FastAPI):
         try:
             from app.config import DASHBOARD_PAIRS, DASHBOARD_TIMEFRAMES
             from app.services.signal_service import get_live_signals
-            # force=True + the SAME pairs/timeframes the /signals route uses, so the exact cache
-            # key the dashboard reads is warm (multi-TF scan is slow; do it once at startup).
-            get_live_signals(force=True, pairs=DASHBOARD_PAIRS, timeframes=DASHBOARD_TIMEFRAMES, show_all=True)
+            # NOT force — trigger the SAME single-flight background scan the /signals route uses,
+            # so we don't run a SECOND concurrent scan that doubles work on the 5/min throttle.
+            get_live_signals(pairs=DASHBOARD_PAIRS, timeframes=DASHBOARD_TIMEFRAMES, show_all=True)
         except Exception as e:
             print(f"[main] daily pre-warm error: {e}")
         try:
