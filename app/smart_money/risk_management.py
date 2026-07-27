@@ -72,33 +72,43 @@ def trade_levels(pair, direction, candles):
     buffer = max(avg_candle * 0.5, pip * 8)
 
     if side == "BUY":
-        if position > 0.5:
-            return reject(f"Price in premium ({position:.0%} of range) — no long discount entry")
         entry = current_price
         stop = swing_low - buffer
         target = swing_high                       # opposing liquidity
         risk = entry - stop
         reward = target - entry
+        located = position <= 0.5                 # in the discount half (buy the pullback)
+        mislocated = f"price in premium ({position:.0%} of range)"
     else:  # SELL
-        if position < 0.5:
-            return reject(f"Price in discount ({position:.0%} of range) — no short premium entry")
         entry = current_price
         stop = swing_high + buffer
         target = swing_low
         risk = stop - entry
         reward = entry - target
+        located = position >= 0.5                 # in the premium half
+        mislocated = f"price in discount ({position:.0%} of range)"
 
     if risk <= 0 or reward <= 0:
         return reject("Non-positive risk or reward")
 
     rr = reward / risk
-    if rr < MIN_RR:
-        return reject(f"R:R {rr:.2f} below {MIN_RR} to the next structural level")
-
     dir_sign = 1 if side == "BUY" else -1
+
+    # A+ setup = located in the right half AND >= MIN_RR. Otherwise return the SAME computed
+    # levels flagged valid=False + a reason, so the dashboard can show an INDICATIVE trade. The
+    # scheduler/alerts path (show_all=False) still drops non-valid setups.
+    if located and rr >= MIN_RR:
+        valid = True
+        reason = ("Discount pullback long → range high" if side == "BUY"
+                  else "Premium pullback short → range low")
+    elif not located:
+        valid, reason = False, f"Indicative only — {mislocated}, not a pullback entry"
+    else:
+        valid, reason = False, f"Indicative only — R:R 1:{rr:.1f} below {MIN_RR}"
+
     return {
         "pair": pair,
-        "valid": True,
+        "valid": valid,
         "entry_price": round(entry, digits),
         "stop_loss": round(stop, digits),
         "take_profit": round(target, digits),
@@ -118,6 +128,5 @@ def trade_levels(pair, direction, candles):
                 "TP3 (structural target): close the runner."
             ),
         },
-        "reason": ("Discount pullback long → range high" if side == "BUY"
-                   else "Premium pullback short → range low"),
+        "reason": reason,
     }

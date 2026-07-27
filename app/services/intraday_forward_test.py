@@ -59,6 +59,16 @@ def _save(records: list):
     os.replace(tmp, path)
 
 
+def _mirror_to_s3():
+    """Best-effort durable copy of the log to S3 (no-op if AWS isn't configured)."""
+    try:
+        from app.services import aws_s3
+        if aws_s3.is_configured():
+            aws_s3.upload_file(_log_path(), "forward-test/intraday_forward_test.jsonl")
+    except Exception as e:
+        print(f"[intraday_forward_test] S3 mirror skipped: {e}")
+
+
 def log_signals(signals: list):
     """Append any NOT-yet-seen signals as open forward-test records. Safe to call every scan."""
     if not signals:
@@ -94,6 +104,7 @@ def log_signals(signals: list):
         if added:
             _save(records)
             print(f"[intraday_forward_test] logged {added} new signal(s); {len(records)} total")
+            _mirror_to_s3()   # durable copy to S3 (no-op if AWS unconfigured)
 
 
 def _evaluate(rec: dict) -> bool:
@@ -183,4 +194,20 @@ def forward_test_stats() -> dict:
                                    "status", "R", "logged_at", "exit_at")}
             for r in records[-10:][::-1]
         ],
+    }
+
+
+def backup_to_s3() -> dict:
+    """On-demand: push the forward-test log + a stats snapshot to S3. Returns a status dict."""
+    from app.services import aws_s3
+    if not aws_s3.is_configured():
+        return {"ok": False,
+                "reason": "AWS not configured — set AWS_S3_BUCKET + credentials",
+                "aws": aws_s3.status()}
+    ok_log = aws_s3.upload_file(_log_path(), "forward-test/intraday_forward_test.jsonl")
+    ok_stats = aws_s3.upload_json(forward_test_stats(), "forward-test/stats.json")
+    return {
+        "ok": bool(ok_log and ok_stats),
+        "bucket": aws_s3.status().get("bucket"),
+        "keys": ["forward-test/intraday_forward_test.jsonl", "forward-test/stats.json"],
     }

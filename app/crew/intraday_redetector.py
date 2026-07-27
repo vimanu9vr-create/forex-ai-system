@@ -18,7 +18,8 @@ import ast
 import json
 import re
 
-from app.config import OPENAI_API_KEY, INTRADAY_MIN_RR
+from app.config import OPENAI_API_KEY, INTRADAY_MIN_RR, LLM_PROVIDER
+from app.crew.llm import get_crew_llm
 from app.services.market_data import get_forex_intraday
 from app.smart_money.structure import detect_swings
 from app.smart_money.liquidity import detect_equal_highs, detect_equal_lows
@@ -135,6 +136,7 @@ def _llm(ev: dict, engine_sig: dict) -> dict:
                    "else's trade; you judge only the evidence and you never invent levels not implied "
                    "by it. Most of the time the right call is REJECT."),
         verbose=False, max_iter=2,
+        llm=get_crew_llm(),   # Bedrock when LLM_PROVIDER=bedrock, else CrewAI default (OpenAI)
     )
     desc = (
         "Structural evidence (you are NOT given any pre-made signal — form your own):\n"
@@ -194,7 +196,8 @@ def redetect_intraday(pair: str, tf: str = "15min", session: str = "london",
     if ev.get("error"):
         return {"verdict": "ERROR", "direction": "NONE", "reason": ev["error"], "source": "error"}
     try:
-        result = _llm(ev, engine_sig) if OPENAI_API_KEY else _deterministic(ev, engine_sig)
+        use_llm = LLM_PROVIDER == "bedrock" or OPENAI_API_KEY
+        result = _llm(ev, engine_sig) if use_llm else _deterministic(ev, engine_sig)
     except Exception as e:
         result = _deterministic(ev, engine_sig)
         result["warning"] = f"crew failed: {e}"
