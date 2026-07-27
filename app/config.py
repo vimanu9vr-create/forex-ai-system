@@ -51,6 +51,13 @@ AUTH_TOKEN = os.getenv("AUTH_TOKEN")
 # (1:3). Higher = fewer, higher-quality setups. Override via MIN_RISK_REWARD env.
 MIN_RISK_REWARD = float(os.getenv("MIN_RISK_REWARD", "3.0"))
 
+# Minimum reward:risk a DIRECTIONAL signal must offer to appear on the dashboard,
+# even in show_all "watch" mode. Setups below this (e.g. 1:0.4, 1:0.5 — where the
+# structural target is closer than the stop) are dropped instead of shown as a
+# sub-1R losing signal. Default 1.0 surfaces 1:1 / 1:2 / 1:3 and hides anything
+# below 1R. Raise to 2.0 or 3.0 to only show higher-quality setups.
+DISPLAY_MIN_RR = float(os.getenv("DISPLAY_MIN_RR", "1.0"))
+
 # ── Live strategy: the cost + out-of-sample validated edge ───────────────────
 # Only GBPUSD + EURUSD on the DAILY timeframe survived costs AND out-of-sample
 # testing, so that's what the live engine trades. Override via env vars.

@@ -2,6 +2,7 @@ import threading
 import time
 from datetime import datetime
 
+from app.config import DISPLAY_MIN_RR
 from app.smart_money.live_pair_scanner import live_pair_scanner
 from app.smart_money.risk_management import trade_levels
 
@@ -26,6 +27,26 @@ def normalize_side(direction):
     if value in {"SELL", "SHORT"}:
         return "SELL"
     return "HOLD"
+
+
+def rr_ratio_value(risk_reward):
+    """Parse a risk_reward field into its reward multiple as a float.
+
+    Accepts the "1:2.5" string format produced by trade_levels (returns 2.5),
+    a bare number/numeric string (returns it), or "N/A"/None/garbage (returns
+    None so callers can tell "no computable RR" apart from a real ratio).
+    """
+    if risk_reward is None:
+        return None
+    if isinstance(risk_reward, (int, float)):
+        return float(risk_reward)
+    text = str(risk_reward).strip()
+    if ":" in text:                       # "1:2.5" -> "2.5"
+        text = text.split(":")[-1].strip()
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
 
 
 def normalize_probability(value):
@@ -75,6 +96,14 @@ def build_signal_from_scan(scan_result, show_all=False):
     rr = levels.get("risk_reward", "N/A")
     setup = levels.get("reason") or (
         f"{side} bias — watching" if side in ("BUY", "SELL") else "Ranging / no clear HTF trend — watching")
+
+    # Drop directional setups whose reward:risk is below the display floor (e.g. 1:0.4,
+    # 1:0.5 — structural target nearer than the stop). This hides sub-1R "losing" signals
+    # even in dashboard show_all mode, so the UI only surfaces 1:1 / 1:2 / 1:3+ setups.
+    # HOLD/neutral rows (no executable levels, risk_reward "N/A") are unaffected.
+    rr_value = rr_ratio_value(rr)
+    if float(entry or 0) > 0 and rr_value is not None and rr_value < DISPLAY_MIN_RR:
+        return None
 
     return {
         "pair": pair,
